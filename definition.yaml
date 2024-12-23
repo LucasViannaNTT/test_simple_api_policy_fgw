@@ -1,0 +1,10 @@
+#%Policy Definition 0.1
+name: test-simple-api-policy-fgw
+description: test-api-policy-fgw's definition
+category: Custom
+providedCharacteristics: []
+requiredCharacteristics: []
+interfaceScope: ["api", "resource"]
+interfaceTransformation: []
+encryptionSupported: true
+violationCategory: authentication
