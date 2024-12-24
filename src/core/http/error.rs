@@ -1,7 +1,21 @@
 use serde::Serialize;
 
+pub struct HttpError {
+    pub status: u32,
+    pub error_message: String,
+}
+
+impl HttpError {
+    pub fn new(status: u32, error_message: String) -> Self {
+        Self {
+            status,
+            error_message,
+        }
+    }
+}
+
 #[derive(Serialize)]
-pub struct ErrorBody {
+pub struct HttpErrorBody {
 
     #[serde(alias = "type")]
     pub _type : String,
@@ -15,26 +29,26 @@ pub struct ErrorBody {
     #[serde(alias = "timestamp")]
     pub timestamp: String,
 
-    #[serde(alias = "error", skip_serializing_if = "ErrorBody::is_empty_or_null")]
+    #[serde(alias = "error", skip_serializing_if = "HttpErrorBody::is_empty_or_null")]
     pub error_message: String,
 }
 
-impl ErrorBody {
+impl HttpErrorBody {
 
     fn is_empty_or_null(s: &str) -> bool {
         s.is_empty() || s == "null"
     }
 
     pub fn with_message(status: u32, timestamp: String, error_message: String) -> Self {
-        let _type = ErrorBody::get_error_type(status);
-        let title = ErrorBody::get_error_title(status);
-        ErrorBody::defined(_type, title, status, timestamp, error_message)
+        let _type = HttpErrorBody::get_error_type(status);
+        let title = HttpErrorBody::get_error_title(status);
+        HttpErrorBody::defined(_type, title, status, timestamp, error_message)
     }
 
     pub fn without_message(status: u32, timestamp: String) -> Self {
-        let _type = ErrorBody::get_error_type(status);
-        let title = ErrorBody::get_error_title(status);
-        ErrorBody::defined(_type, title, status, timestamp, "".to_string())
+        let _type = HttpErrorBody::get_error_type(status);
+        let title = HttpErrorBody::get_error_title(status);
+        HttpErrorBody::defined(_type, title, status, timestamp, "".to_string())
     }
 
     pub fn defined(_type: String, title: String, status: u32, timestamp: String, error_message: String) -> Self {
