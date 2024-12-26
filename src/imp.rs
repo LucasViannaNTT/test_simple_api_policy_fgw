@@ -2,7 +2,7 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
 use crate::config::*;
-use crate::core::auth::jwt::Jwt;
+use crate::core::auth::jwt::JWT;
 use crate::core::cache::Cache;
 use crate::core::cache::CacheHttpContext;
 use crate::core::http::expansion::ExpandedHttpContext;
@@ -21,15 +21,7 @@ impl Context for CustomHttpContext {}
 impl HttpContext for CustomHttpContext {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
 
-        let _x_custom_auth = match self.get_http_request_header("x-custom-auth") {
-            Some(value) => value,
-            None => {
-                self.send_http_error_custom(401, "Unauthorized");
-                return Action::Pause;
-            }
-        };
-
-        let auth = match self.get_http_request_header("Authorization") {
+        let token: String = match self.get_http_request_header("Authorization") {
             Some(auth) => auth,
             None => {
                 self.send_http_error_custom(401, "Unauthorized");
@@ -37,7 +29,12 @@ impl HttpContext for CustomHttpContext {
             }
         };
 
-        let jwt = match Jwt::from_token(auth) {
+        if let Err(http_error) = JWT::validate_token_format(&r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string(), &token) {
+            self.send_http_error(http_error);
+            return Action::Pause;
+        }
+
+        let jwt: JWT = match JWT::from_token(&token) {
             Ok(jwt) => jwt,
             Err(http_error) => {
                 self.send_http_error(http_error);
@@ -45,13 +42,21 @@ impl HttpContext for CustomHttpContext {
             }
         };
 
-        if let Err(http_error) = jwt.validate_algorithm("HS256") {
+        if let Err(http_error) = {
+                if self.policy_config.do_validate_algorithm  {jwt.validate_algorithm(&self.policy_config.valid_algorithms)} else {Ok(())}
+            }.and_then(|_| {
+                if self.policy_config.do_validate_issuer {jwt.validate_issuer(&self.policy_config.valid_issuers)} else {Ok(())}
+            }).and_then(|_| {
+                if self.policy_config.do_validate_audience {jwt.validate_audience(&self.policy_config.valid_audiences)} else {Ok(())}
+            }).and_then(|_| {
+                if self.policy_config.do_validate_expiration {jwt.validate_expiration()} else {Ok(())}
+            })
+        {
             self.send_http_error(http_error);
             return Action::Pause;
         }
         
-        self.send_http_error_custom(401, "Unauthorized");
-        Action::Pause
+        Action::Continue
     }
 }
 

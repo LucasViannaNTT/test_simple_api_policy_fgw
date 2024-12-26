@@ -3,18 +3,56 @@
     "type": "object",
     "description": "Test policy for Flex Gateway",
     "properties": {
-        "secret-value": {
-            "title": "Custom Auth Header Password",
-            "type": "string",
-            "@context": {
-                "@characteristics": [
-                    "security:sensitive"
-                ]
+        "do-validate-issuer": {
+            "title": "Validate Issuer",
+            "description": "Whether to validate the issuer of the JWT token",
+            "type": "boolean"
+        },
+        "valid-issuers": {
+            "title": "Valid Issuers",
+            "description": "List of valid issuers",
+            "type": "array",
+            "items": {
+                "type": "string"
             }
+        },
+        "do-validate-audience": {
+            "title": "Validate Audience",
+            "description": "Whether to validate the audience of the JWT token",
+            "type": "boolean"
+        },
+        "valid-audiences": {
+            "title": "Valid Audiences",
+            "description": "List of valid audiences",
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "do-validate-algorithm": {
+            "title": "Validate Algorithm",
+            "description": "Whether to validate the algorithm of the JWT token",
+            "type": "boolean"
+        },
+        "do-validate-expiration": {
+            "title": "Validate Expiration",
+            "description": "Whether to validate the expiration of the JWT token",
+            "type": "boolean"
+        },
+        "log-level": {
+            "title": "Log Level",
+            "description": "Log level for the policy",
+            "type": "string",
+            "enum": [
+                "NONE",
+                "DEBUG",
+                "INFO",
+                "ERROR"
+            ]
         }
     },
     "required": [
-        "secret-value"
+
     ],
     "unevaluatedProperties": false,
     "@context": {
