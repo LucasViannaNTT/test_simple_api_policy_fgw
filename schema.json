@@ -34,6 +34,14 @@
             "description": "Whether to validate the algorithm of the JWT token",
             "type": "boolean"
         },
+        "valid-algorithms": {
+            "title": "Valid Algorithms",
+            "description": "List of valid algorithms",
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
         "do-validate-expiration": {
             "title": "Validate Expiration",
             "description": "Whether to validate the expiration of the JWT token",

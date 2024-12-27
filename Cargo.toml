@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 name="test_simple_api_policy_fgw"
 path="src/lib.rs"
 
@@ -16,9 +16,11 @@ log = "0.4"
 regex = "1.9.1"
 base64 = "~0.2.0"
 base64-url = "2.0.0"
-lazy_static = "1.4.0"
 chrono = { version = "0.4", features = ["serde"] }
-wasm-bindgen-test = "0.3.49"
+
+[[example]]
+name = "test"
+path="examples/test.rs"
 
 [profile.release]
 opt-level = "z"

@@ -9,7 +9,7 @@ use core::http::root::*;
 use config::*;
 use imp::*;
 
-static POLICY_ID: &str = "test-simple-api-policy-fgw";
+pub static POLICY_ID: &str = "test-simple-api-policy-fgw";
 
 proxy_wasm::main! {{
     proxy_wasm::set_log_level(LogLevel::Trace);

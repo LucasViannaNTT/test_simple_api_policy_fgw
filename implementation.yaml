@@ -1,5 +1,5 @@
 #%Policy Implementation 1.0
 minRuntimeVersion: 1.1.0
 technology: flexGateway
-name: test-simple-api-policy-fgw-impl-1-0-1
+name: test-simple-api-policy-fgw-impl-2-1-0
 releaseNotes: Modularity
