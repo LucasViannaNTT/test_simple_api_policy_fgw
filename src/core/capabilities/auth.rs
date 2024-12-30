@@ -7,7 +7,7 @@ pub mod jwt
     use serde::Deserialize;
     use serde_json::Value;
 
-    use crate::core::http::error::HttpError;
+    use crate::core::http::{error::HttpError, expansion::ExpandedHttpContext};
 
     #[derive(Default, Clone, Deserialize, Debug)]
     #[doc = "The JWT JOSE Header represents a JSON object whose members are the header parameters of the JWT."]
@@ -79,9 +79,10 @@ pub mod jwt
     #[derive(Debug)]
     #[doc = "The JWT struct represents a JSON Web Token (JWT) as defined by RFC 7519."]
     pub struct JWT{
-        pub jwt_jose_header: JWTJOSEHeader,
-        pub jwt_claims_set: JWTClaimsSet,
-        pub jwt_signature: String,
+        pub jose_header: JWTJOSEHeader,
+        pub claims_set: JWTClaimsSet,
+        pub signature: String,
+        pub raw: String,
     }
 
     impl JWT {
@@ -99,7 +100,8 @@ pub mod jwt
         }
 
         #[doc = "Creates a new JWT instance from a token string, containing the header, payload and signature.
-        \n\r If the token is not in base64, or any of the parts are not in the expected format, an error is returned."]
+        \n\r If the token is not in base64, or any of the parts are not in the expected format, an error is returned.
+        \n\r Reminder: The Format must have been removed (e.g., Bearer ) before calling this method."]
         pub fn from_token(token: &String) -> Result<Self, HttpError> {
 
             fn decode(encoded: String) -> Result<String, HttpError> {
@@ -150,16 +152,17 @@ pub mod jwt
             let jwt_signature = parts[2].to_string();
             
             Ok(JWT {
-                jwt_jose_header,
-                jwt_claims_set,
-                jwt_signature,
+                jose_header: jwt_jose_header,
+                claims_set: jwt_claims_set,
+                signature: jwt_signature,
+                raw: token.clone(), // TODO: Maybe use a reference
             })
         }
 
         #[doc = "Validates the claims of the JWT against the expected claims.
         \n\rIf any of the claims are not expected, an error is returned."]
         pub fn validate_claims(&self, expected_claims: HashMap<&str, &str>) -> Result<(), HttpError> {
-            for (key, _value) in &self.jwt_claims_set.claims {
+            for (key, _value) in &self.claims_set.claims {
                 if !expected_claims.contains_key(key.as_str()) {
                     return Err(HttpError::new(401, "Error decoding token, claim is not handled.".to_string()));
                 }
@@ -171,7 +174,7 @@ pub mod jwt
         #[doc = "Validates the algorithm of the JWT against the expected algorithm.
         \n\rIf the algorithm value does not match the expected, an error is returned."]
         pub fn validate_algorithm(&self, expected_algorithms: &Vec<String>) -> Result<(), HttpError> {
-            let alg = &self.jwt_jose_header.algorithm;
+            let alg = &self.jose_header.algorithm;
             
             if !expected_algorithms.contains(&alg.to_string()) {
                 return Err(HttpError::new(401, "Error decoding token, algorithm does not match expected.".to_string()));
@@ -183,7 +186,7 @@ pub mod jwt
         #[doc = "Validates the expiration of the JWT.
         \n\rIf the expiration is not found, has expired, or not in the correct format, an error is returned."]
         pub fn validate_expiration(&self) -> Result<(), HttpError> {
-            let exp : i64 = match self.jwt_claims_set.get(JWTRegisteredClaims::ExpirationTime.id()) {
+            let exp : i64 = match self.claims_set.get(JWTRegisteredClaims::ExpirationTime.id()) {
                 Ok(exp) => exp,
                 Err(http_error) => return Err(http_error),
             };
@@ -196,41 +199,11 @@ pub mod jwt
             Ok(())
         }
 
-        #[doc = "Validates the issuer of the JWT.
-        \n\rIf the issuer is not found, or its value does not match one of the expected, an error is returned."]
-        pub fn validate_issuer(&self, expected_issuers: &Vec<String>) -> Result<(), HttpError> {
-            let iss : String = match self.jwt_claims_set.get(JWTRegisteredClaims::Issuer.id()) {
-                Ok(iss) => iss,
-                Err(http_error) => return Err(http_error),
-            };
-
-            if !expected_issuers.contains(&iss.to_string()) {
-                return Err(HttpError::new(401, "Error decoding token, issuer claim value does not match expected.".to_string()));
-            }
-
-            Ok(())
-        }
-
-        #[doc = "Validates the audience of the JWT.
-        \n\rIf the audience is not found, or its value does not match one of the expected, an error is returned."]
-        pub fn validate_audience(&self, expected_audiences: &Vec<String>) -> Result<(), HttpError> {
-            let aud : String = match self.jwt_claims_set.get(JWTRegisteredClaims::Audience.id()) {
-                Ok(aud) => aud,
-                Err(http_error) => return Err(http_error),
-            };
-
-            if !expected_audiences.contains(&aud.to_string()) {
-                return Err(HttpError::new(401, "Error decoding token, audience claim value does not match expected.".to_string()));
-            }
-
-            Ok(())
-        }
-
         #[doc = "Validates that a claim is within some expected values.
         \n\rIf the claim is not found, or does not match oneof the expected values or cannot be parsed, an error is returned."]
-        pub fn validate_claim_value<T>(&self, claim_id: &str, expected_values: Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + std::str::FromStr {
-            let claim : T = match self.jwt_claims_set.get(claim_id) {
-                Ok(scopes) => scopes,
+        pub fn validate_claim_value<T>(&self, claim_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + std::str::FromStr {
+            let claim : T = match self.claims_set.get(claim_id) {
+                Ok(claim) => claim,
                 Err(http_error) => return Err(http_error),
             };
 
@@ -239,6 +212,214 @@ pub mod jwt
             }
 
             Ok(())
+        }
+    }
+
+    pub trait JWTHttpContext : ExpandedHttpContext {
+        fn get_jwt(&self) -> Option<&JWT>;
+        fn get_mut_jwt(&mut self) -> Option<&mut JWT>;
+    }
+
+    pub mod okta {
+        use std::{collections::HashMap, time::Duration};
+
+        use jwt_simple::{claims::NoCustomClaims, prelude::{RS256PublicKey, RSAPublicKeyLike}};
+        use proxy_wasm::traits::Context;
+
+        use crate::core::{capabilities::cache::{Cache, StorageContext}, http::error::HttpError};
+
+        use super::{JWTHttpContext, JWTRegisteredClaims};
+
+        pub struct OktaValidatorConfig {
+            pub timeout: u64,
+            pub upstream : HashMap<String, String>,
+            pub jwk_cache_id: String,
+            pub jwk_cache_ttl: u64,
+        }
+
+        pub struct OktaCacheData {
+            pub e : String,
+            pub n : String,
+            pub key : String,
+            pub exp : String,
+        }
+
+        pub trait OktaValidator : JWTHttpContext + StorageContext + Context {
+            fn get_okta_validator_config(&self) -> &OktaValidatorConfig;
+
+            #[doc = "Requests Okta for validation of the JWT."]
+            fn request_okta_validation(&mut self) -> Result<(), HttpError> {
+                let jwt = match self.get_jwt() {
+                    Some(jwt) => jwt,
+                    None => return Err(HttpError::new(500, "Jwt not found in request context.".to_string())),
+                };
+                
+                let timeout = self.get_okta_validator_config().timeout;
+                let issuer = jwt.claims_set.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
+                let issuer = issuer.trim_matches('"').to_string();
+                let issuer_split = issuer.split('/').collect::<Vec<&str>>();
+                let okta_endpoint = issuer_split[2];
+                let okta_issuer_id = issuer_split[4];
+
+                let upstream = match self.get_okta_validator_config().upstream.get(&okta_endpoint.to_string()) {
+                    Some(upstream) => upstream,
+                    None => return Err(HttpError::new(500, format!("Upstream for {} not found.", okta_endpoint))),
+                };
+
+                match self.dispatch_http_call(
+                    upstream, 
+                    vec![
+                        (":method", "GET"),
+                        (":path",  format!("/oauth2/{}/v1/keys", okta_issuer_id).as_str()),
+                        (":authority", okta_endpoint),
+                    ], 
+                    None, 
+                    vec![], 
+                    Duration::from_secs(timeout),
+                ) {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(HttpError::new(500, format!("Error calling Okta endpoint: {:?}", err))),
+                }
+            }
+
+            // TODO Refactor this method so it doesnt rely as much on clones to avoid borrowing problems.
+            #[doc = "Handles okta validation response."]
+            fn response_okta_validation(&mut self, _: u32, _: usize, body_size: usize, _: usize) {
+                let body = {
+                    let body = self.get_http_call_response_body(0, body_size);
+                    match body {
+                        Some(body) => body.clone(),
+                        None => return self.send_http_error(HttpError::new(500, "No response body found.".to_string())),
+                    }
+                };
+
+                let jwt = match self.get_mut_jwt() {
+                    Some(jwt) => jwt,
+                    None => return self.send_http_error(HttpError::new(500, "Jwt not found in request context.".to_string())),
+                };
+
+                // We unwrap, as the validation should have passed before this function gets called.
+                let issuer = jwt.claims_set.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
+                let raw_token = jwt.raw.clone();
+
+                let okta_response = match OktaResponse::from_vec_u8(&body) {
+                    Ok(resp) => resp,
+                    Err(http_error) => return self.send_http_error(http_error.clone()),
+                };
+
+                let kid_result = jwt.claims_set.get::<String>("kid");
+                let token_kid = match kid_result {
+                    Ok(kid) => kid,
+                    Err(http_error) => return self.send_http_error(http_error.clone()),
+                };
+
+                for jwk in okta_response.jwks {
+                    if jwk.kid == *token_kid {
+                        match self.store_issuer_jwk(&issuer, &jwk) {
+                            Ok(()) => (),
+                            Err(http_error) => return self.send_http_error(http_error),
+                        }
+
+                        match self.validate_token(&jwk.e, &jwk.n, &raw_token) {
+                            Ok(()) => (),
+                            Err(http_error) => (), // return self.send_http_error(http_error),
+                        }
+                    }
+                }
+
+                self.resume_http_request();
+            }
+
+            fn store_issuer_jwk(&mut self, issuer : &String, jwk : &OktaJWK) -> Result<(), HttpError> {
+                let config = self.get_okta_validator_config();
+                let cache_id = config.jwk_cache_id.clone();
+                let cache_ttl = config.jwk_cache_ttl.clone();
+                let key = issuer.trim_matches('"').to_string() + &"/v1/keys".trim_matches('"').to_string();
+                
+                let cache: &mut Box<dyn Cache<OktaCacheData>> = match self.get_mut_storage().get_mut_cache::<OktaCacheData>(&cache_id) {
+                    Some(cache) => cache,
+                    None => match self.get_mut_storage().create_mut_cache(&cache_id) {
+                        Ok(cache) => cache,
+                        Err(err) => return Err(HttpError::new(500, format!("Error creating cache: {:?}", err))),
+                    },
+                };
+
+                cache.as_mut().set(&cache_id, OktaCacheData { e: jwk.e.clone(), n: jwk.n.clone(), key, exp: cache_ttl.to_string() });
+
+                return Ok(())
+            }
+
+            fn validate_token(&self, e : &str, n : &str, token : &String) -> Result<(), HttpError> {
+                let e = match base64_url::decode(e) {
+                    Ok(e) => e,
+                    Err(err) => return Err(HttpError::new(500, format!("Error parsing public key: {:?}", err))),
+                };
+
+                let n = match base64_url::decode(n) {
+                    Ok(n) => n,
+                    Err(err) => return Err(HttpError::new(500, format!("Error parsing public key: {:?}", err))),
+                };
+
+                let public_key = match RS256PublicKey::from_components(&n, &e) {
+                    Ok(public_key) => public_key,
+                    Err(err) => return Err(HttpError::new(500, format!("Error parsing public key: {:?}", err))),
+                };
+
+                match public_key.verify_token::<NoCustomClaims>(token, None) {
+                    Ok(_) => Ok(()),
+                    Err(err) => return Err(HttpError::new(500, format!("Error verifying token: {:?}", err))),
+                }
+            }
+        }
+
+        pub struct OktaJWK {
+            pub kid : String,
+            pub n : String,
+            pub e : String,
+        }
+
+        struct OktaResponse {
+            pub jwks : Vec<OktaJWK>,
+        }
+
+        impl OktaResponse {
+            pub fn from_vec_u8(vec : &Vec<u8>) -> Result<OktaResponse, HttpError> {
+                let json : serde_json::Value = match serde_json::from_slice(&vec) {
+                    Ok(json) => json,
+                    Err(_) => return Err(HttpError::new(500, "Error parsing Okta response.".to_string())),
+                };
+
+                let keys = match json.get("keys") {
+                    Some(keys) => match keys.as_array() {
+                        Some(keys) => keys,
+                        None => return Err(HttpError::new(500, "Error parsing Okta keys array.".to_string())),
+                    }
+                    None => return Err(HttpError::new(500, "No keys found in Okta response.".to_string())),
+                };
+
+                let mut jwks : Vec<OktaJWK> = Vec::new();
+                
+                for key in keys {
+                    let kid = match key.get("kid") {
+                        Some(kid) => kid.as_str().unwrap().to_string(),
+                        None => return Err(HttpError::new(500, "No kid found in Okta key.".to_string())),
+                    };
+
+                    let n = match key.get("n") {
+                        Some(n) => n.as_str().unwrap().to_string(),
+                        None => return Err(HttpError::new(500, "No n found in Okta key.".to_string())),
+                    };
+
+                    let e = match key.get("e") {
+                        Some(e) => e.as_str().unwrap().to_string(),
+                        None => return Err(HttpError::new(500, "No e found in Okta key.".to_string())),
+                    };
+
+                    jwks.push(OktaJWK { kid, n, e });
+                }
+
+                return Ok(OktaResponse { jwks } );
+            }
         }
     }
 }

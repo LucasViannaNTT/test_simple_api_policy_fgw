@@ -23,7 +23,7 @@ pub trait ExpandedHttpContext: HttpContext {
         self.send_http_response(
             error.status,
             Vec::new(), 
-            Some(error.build().as_bytes())
+            Some(error.to_json().as_bytes())
         );
     }
 }

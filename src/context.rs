@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use okta::OktaValidator;
+use okta::OktaValidatorConfig;
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
@@ -10,9 +14,11 @@ use crate::core::http::expansion::ExpandedHttpContext;
 use crate::POLICY_ID;
 
 pub struct CustomHttpContext {
-    pub policy_config: PolicyConfig,
-    pub logger: Logger,
-    pub cache: Cache,
+    policy_config: PolicyConfig,
+    okta_validator_config : OktaValidatorConfig,
+    logger: Logger,
+    storage: Storage,
+    jwt : Option<JWT>,
 }
 
 impl Context for CustomHttpContext {}
@@ -60,13 +66,19 @@ impl HttpContext for CustomHttpContext {
             } else {Ok(())}
         }.and_then(|_| {
             if self.policy_config.do_validate_issuer.is_some() && self.policy_config.valid_issuers.is_some() {
-                let result = jwt.validate_issuer(&self.policy_config.valid_issuers.as_ref().unwrap());
+                let result = jwt.validate_claim_value::<String>(
+                    JWTRegisteredClaims::Issuer.id(), 
+                    self.policy_config.valid_issuers.as_ref().unwrap(),
+                );
                 self.logger.log_debug(&format!("Valid Issuer: {}", result.is_ok()));
                 result
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_audience.is_some() && self.policy_config.valid_audiences.is_some() {
-                let result = jwt.validate_audience(&self.policy_config.valid_audiences.as_ref().unwrap());
+                let result = jwt.validate_claim_value::<String>(
+                    JWTRegisteredClaims::Audience.id(), 
+                    self.policy_config.valid_audiences.as_ref().unwrap(),
+                );
                 self.logger.log_debug(&format!("Valid Audience: {}", result.is_ok()));
                 result
             } else {Ok(())}
@@ -76,6 +88,8 @@ impl HttpContext for CustomHttpContext {
                 self.logger.log_debug(&format!("Valid Expiration: {}", result.is_ok()));
                 result
             } else {Ok(())}
+        }).and_then(|_| {
+            self.request_okta_validation()
         })
         {
             self.logger.log_debug("Error validating claims.");
@@ -90,7 +104,6 @@ impl HttpContext for CustomHttpContext {
 
 impl ExpandedHttpContext for CustomHttpContext {
     fn new(policy_config : PolicyConfig) -> Self {
-
         let log_level = match &policy_config.log_level {
             Some(log_level) => match LOG_LEVELS.get(log_level) {
                 Some(log_level) => *log_level,
@@ -98,15 +111,20 @@ impl ExpandedHttpContext for CustomHttpContext {
             },
             None => LogLevel::Trace
         };
-        
-        let logger = Logger::new(POLICY_ID.to_string(), log_level);
-
-        let cache: Cache = Cache::new();
 
         let context = CustomHttpContext {
             policy_config,
-            logger,
-            cache,
+            okta_validator_config : OktaValidatorConfig {
+                timeout: 60,
+                upstream : HashMap::from([
+                    ("rlus-int-nonprod.oktapreview.com".to_string(), "okta-nonprod.default.svc".to_string())
+                ]),
+                jwk_cache_id : "okta-jwk-cache".to_string(),
+                jwk_cache_ttl : 1000,
+            },
+            logger : Logger::new(POLICY_ID.to_string(), log_level),
+            storage : Storage::new(),
+            jwt : None,
         };
         return context;
     }
@@ -116,14 +134,34 @@ impl ExpandedHttpContext for CustomHttpContext {
     }
 }
 
-impl CacheContext for CustomHttpContext {
-    fn get_cache(&self) -> &Cache {
-        &self.cache
-    }
-}
-
 impl LoggerContext for CustomHttpContext {
     fn get_logger(&self) -> &Logger {
         &self.logger
+    }
+}
+
+impl JWTHttpContext for CustomHttpContext {
+    fn get_jwt(&self) -> Option<&JWT> {
+        self.jwt.as_ref()
+    }
+    
+    fn get_mut_jwt(&mut self) -> Option<&mut JWT> {
+        self.jwt.as_mut()
+    }
+}
+
+impl StorageContext for CustomHttpContext {
+    fn get_mut_storage(&mut self) -> &mut Storage {
+        &mut self.storage
+    }
+    
+    fn get_storage(&self) -> &Storage {
+        &self.storage
+    }
+}
+
+impl OktaValidator for CustomHttpContext {
+    fn get_okta_validator_config(&self) -> &OktaValidatorConfig {
+        &self.okta_validator_config
     }
 }
