@@ -52,10 +52,12 @@
             "description": "Log level for the policy",
             "type": "string",
             "enum": [
-                "NONE",
+                "TRACE",
                 "DEBUG",
                 "INFO",
-                "ERROR"
+                "WARM",
+                "ERROR",
+                "CRITICAL"
             ]
         }
     },

@@ -1,18 +1,7 @@
 use serde::Deserialize;
 
-pub static POLICY_DO_VALIDATE_ISSUER: &str = "do-validate-issuer";
-pub static POLICY_DO_VALIDATE_AUDIENCE: &str = "do-validate-audience";
-pub static POLICY_DO_VALIDATE_EXPIRATION: &str = "do-validate-expiration";
-pub static POLICY_DO_VALIDATE_ALGORITHM: &str = "do-validate-algorithm";
-pub static POLICY_VALID_ISSUERS: &str = "valid-issuers";
-pub static POLICY_VALID_AUDIENCES: &str = "valid-audiences";
-pub static POLICY_VALID_ALGORITHMS: &str = "valid-algorithms";
-pub static POLICY_LOG_LEVEL: &str = "log-level";
-pub static POLICY_LOG_LEVEL_NONE: &str = "NONE";
-pub static POLICY_LOG_LEVEL_INFO: &str = "INFO";
-pub static POLICY_LOG_LEVEL_DEBUG: &str = "DEBUG";
-pub static POLICY_LOG_LEVEL_ERROR: &str = "ERROR";
-
+#[doc = "The configuration for the policy.
+\n\r Must match schema.json properties."]
 #[derive(Default, Clone, Deserialize)]
 pub struct PolicyConfig {
 

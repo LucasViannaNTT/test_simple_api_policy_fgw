@@ -1,5 +1,4 @@
-use super::http::expansion::ExpandedHttpContext;
-
+use proxy_wasm::traits::Context;
 
 #[derive(Default)]
 pub struct Cache {}
@@ -11,6 +10,6 @@ impl Cache {
     }
 }
 
-pub trait CacheHttpContext: ExpandedHttpContext {
+pub trait CacheContext: Context {
     fn get_cache(&self) -> &Cache;
 }

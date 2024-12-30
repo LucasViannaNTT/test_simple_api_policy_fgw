@@ -2,14 +2,13 @@ use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
 use crate::config::*;
-use crate::core::auth::jwt::JWT;
-use crate::core::cache::Cache;
-use crate::core::cache::CacheHttpContext;
+use crate::core::capabilities::auth::jwt::*;
+use crate::core::capabilities::cache::*;
+use crate::core::capabilities::logger::*;
+use crate::core::http::error::HttpError;
 use crate::core::http::expansion::ExpandedHttpContext;
-use crate::core::logger::Logger;
-use crate::core::logger::LoggerHttpContext;
+use crate::POLICY_ID;
 
-#[derive(Default)]
 pub struct CustomHttpContext {
     pub policy_config: PolicyConfig,
     pub logger: Logger,
@@ -25,7 +24,7 @@ impl HttpContext for CustomHttpContext {
         let token: String = match self.get_http_request_header("Authorization") {
             Some(auth) => auth,
             None => {
-                self.send_http_error_custom(401, "Unauthorized");
+                self.send_http_error(HttpError::new(401, "Unauthorized".to_string()));
                 return Action::Pause;
             }
         };
@@ -91,10 +90,23 @@ impl HttpContext for CustomHttpContext {
 
 impl ExpandedHttpContext for CustomHttpContext {
     fn new(policy_config : PolicyConfig) -> Self {
+
+        let log_level = match &policy_config.log_level {
+            Some(log_level) => match LOG_LEVELS.get(log_level) {
+                Some(log_level) => *log_level,
+                None => LogLevel::Trace
+            },
+            None => LogLevel::Trace
+        };
+        
+        let logger = Logger::new(POLICY_ID.to_string(), log_level);
+
+        let cache: Cache = Cache::new();
+
         let context = CustomHttpContext {
             policy_config,
-            logger: Logger::new(),
-            cache: Cache::new(),
+            logger,
+            cache,
         };
         return context;
     }
@@ -104,13 +116,13 @@ impl ExpandedHttpContext for CustomHttpContext {
     }
 }
 
-impl CacheHttpContext for CustomHttpContext {
+impl CacheContext for CustomHttpContext {
     fn get_cache(&self) -> &Cache {
         &self.cache
     }
 }
 
-impl LoggerHttpContext for CustomHttpContext {
+impl LoggerContext for CustomHttpContext {
     fn get_logger(&self) -> &Logger {
         &self.logger
     }
