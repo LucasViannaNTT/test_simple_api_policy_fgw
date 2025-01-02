@@ -17,7 +17,7 @@ regex = "1.9.1"
 base64 = "~0.2.0"
 base64-url = "2.0.0"
 jwt-simple = "0.11.6"
-dashmap = "5.0"
+lazy_static = "1.5.0"
 chrono = { version = "0.4", features = ["serde"] }
 
 [[example]]
