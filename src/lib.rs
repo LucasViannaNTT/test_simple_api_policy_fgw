@@ -1,14 +1,13 @@
+#[doc = "Base functionality for Custom Rust Proxy-Wasm development."]
 pub mod core;
-pub mod config;
-pub mod context;
+#[doc = "Custom functionality for Custom Rust Proxy-Wasm development."]
+pub mod custom;
 
 use core::root::HttpRootContext;
 
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
-use test_jwt_validation::CustomHttpContext;
-use config::*;
-use context::*;
+use custom::test_jwt_validation::*;
 
 pub const POLICY_ID: &str = "test-simple-api-policy-fgw";
 
