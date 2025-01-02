@@ -1,28 +1,37 @@
-use std::collections::HashMap;
-
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
-use serde::Deserialize;
-use serde::Serialize;
-use staged::StagedCache;
 
 use crate::config::*;
 use crate::core::capabilities::auth::jwt::*;
-use crate::core::capabilities::auth::okta::OktaCacheData;
-use crate::core::capabilities::auth::okta::OktaValidator;
-use crate::core::capabilities::auth::okta::OktaValidatorConfig;
-use crate::core::capabilities::cache::*;
 use crate::core::capabilities::logger::*;
-use crate::core::http::error::HttpError;
-use crate::core::http::expansion::ExpandedHttpContext;
+use crate::core::error::HttpError;
+use crate::core::expansion::ExpandedHttpContext;
 use crate::POLICY_ID;
 
 pub struct CustomHttpContext {
     policy_config: PolicyConfig,
-    okta_validator_config : OktaValidatorConfig,
     logger: Logger,
-    okta_cache: StagedCache<OktaCacheData>,
     jwt : Option<JWT>,
+}
+
+impl CustomHttpContext {
+    pub fn new(policy_config : PolicyConfig) -> Self {
+        let log_level = match &policy_config.log_level {
+            Some(log_level) => match LOG_LEVELS.get(log_level) {
+                Some(log_level) => *log_level,
+                None => LogLevel::Trace
+            },
+            None => LogLevel::Trace
+        };
+
+        let context = CustomHttpContext {
+            policy_config,
+            logger : Logger::new(POLICY_ID.to_string(), log_level),
+            jwt : None,
+        };
+    
+        return context;
+    }
 }
 
 impl Context for CustomHttpContext {}
@@ -92,54 +101,21 @@ impl HttpContext for CustomHttpContext {
                 self.logger.log_debug(&format!("Valid Expiration: {}", result.is_ok()));
                 result
             } else {Ok(())}
-        }).and_then(|_| {
-            self.request_okta_validation()
         })
         {
             self.logger.log_debug("Error validating claims.");
             self.send_http_error(http_error);
             return Action::Pause;
         }
-        self.set_shared_data(key, value, cas)
+
         self.logger.log_debug("Claims validated.");
         Action::Continue
     }
 }
 
-impl ExpandedHttpContext for CustomHttpContext {
-    fn new(policy_config : PolicyConfig) -> Self {
-        let log_level = match &policy_config.log_level {
-            Some(log_level) => match LOG_LEVELS.get(log_level) {
-                Some(log_level) => *log_level,
-                None => LogLevel::Trace
-            },
-            None => LogLevel::Trace
-        };
+impl ExpandedHttpContext for CustomHttpContext {}
 
-        let context = CustomHttpContext {
-            policy_config,
-            okta_validator_config : OktaValidatorConfig {
-                timeout: 60,
-                upstream : HashMap::from([
-                    ("rlus-int-nonprod.oktapreview.com".to_string(), "okta-nonprod.default.svc".to_string())
-                ]),
-                jwk_cache_id : "okta-jwk-cache".to_string(),
-                jwk_cache_ttl : 1000,
-            },
-            logger : Logger::new(POLICY_ID.to_string(), log_level),
-            okta_cache : StagedCache::from_empty("okta-jwk-cache"),
-            jwt : None,
-        };
-
-        return context;
-    }
-    
-    fn get_policy_config(&self) -> &PolicyConfig {
-        &self.policy_config
-    }
-}
-
-impl LoggerContext for CustomHttpContext {
+impl LoggerCapability for CustomHttpContext {
     fn get_logger(&self) -> &Logger {
         &self.logger
     }
@@ -152,37 +128,5 @@ impl JWTHttpContext for CustomHttpContext {
     
     fn get_mut_jwt(&mut self) -> Option<&mut JWT> {
         self.jwt.as_mut()
-    }
-}
-
-impl CacheContext<StagedCache<OktaCacheData>, OktaCacheData> for CustomHttpContext {
-    fn get_cache(&self) -> &StagedCache<OktaCacheData> {
-        &self.okta_cache
-    }
-
-    fn get_mut_cache(&mut self) -> &mut StagedCache<OktaCacheData> {
-        &mut self.okta_cache
-    }
-}
-
-impl CacheContext<StagedCache<SomeData>, SomeData> for CustomHttpContext {
-    fn get_mut_cache(&mut self) -> &mut StagedCache<SomeData> {
-        todo!()
-    }
-
-    fn get_cache(&self) -> &StagedCache<SomeData> {
-        todo!()
-    }
-}
-
-
-#[derive(Serialize, Deserialize)]
-pub struct SomeData {
-
-}
-
-impl OktaValidator for CustomHttpContext {
-    fn get_okta_validator_config(&self) -> &OktaValidatorConfig {
-        &self.okta_validator_config
     }
 }

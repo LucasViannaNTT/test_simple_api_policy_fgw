@@ -4,7 +4,7 @@ use jwt_simple::{claims::NoCustomClaims, prelude::{RS256PublicKey, RSAPublicKeyL
 use proxy_wasm::traits::Context;
 use serde::{Deserialize, Serialize};
 
-use crate::core::{capabilities::cache::{staged::StagedCache, Cache, CacheContext}, http::error::HttpError};
+use crate::core::{capabilities::cache::CacheCapability, error::HttpError};
 
 use super::jwt::{JWTHttpContext, JWTRegisteredClaims};
 
@@ -17,13 +17,26 @@ pub struct OktaValidatorConfig {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct OktaCacheData {
+    pub issuer : String,
     pub e : String,
     pub n : String,
-    pub key : String,
     pub exp : String,
 }
 
-pub trait OktaValidator : JWTHttpContext + CacheContext<StagedCache<OktaCacheData>, OktaCacheData> + Context {
+impl OktaCacheData {
+    pub fn new(issuer : String, e : String, n : String, exp : String) -> OktaCacheData {
+        OktaCacheData { issuer, e, n, exp }
+    }
+
+    pub fn to_vec_u8(&self) -> Result<Vec<u8>, HttpError> {
+        match serde_json::to_vec(self) {
+            Ok(vec) => Ok(vec),
+            Err(_) => Err(HttpError::new(500, "Error serializing Okta cache entry.".to_string())),
+        }
+    }
+}
+
+pub trait OktaValidator : JWTHttpContext + CacheCapability<OktaCacheData> + Context {
     fn get_okta_validator_config(&self) -> &OktaValidatorConfig;
 
     #[doc = "Requests Okta for validation of the JWT."]
@@ -61,7 +74,6 @@ pub trait OktaValidator : JWTHttpContext + CacheContext<StagedCache<OktaCacheDat
         }
     }
 
-    // TODO Refactor this method so it doesnt rely as much on clones to avoid borrowing problems.
     #[doc = "Handles okta validation response."]
     fn response_okta_validation(&mut self, _: u32, _: usize, body_size: usize, _: usize) {
         let body = {
@@ -94,8 +106,13 @@ pub trait OktaValidator : JWTHttpContext + CacheContext<StagedCache<OktaCacheDat
 
         for jwk in okta_response.jwks {
             if jwk.kid == *token_kid {
-                match self.store_issuer_jwk(&issuer, &jwk) {
-                    Ok(()) => (),
+                match self.create_okta_cache_entry(&issuer, &jwk) {
+                    Ok(cache_entry) => {
+                        match self.write_to_cache(&jwk.kid, cache_entry) {
+                            Ok(_) => (),
+                            Err(http_error) => return self.send_http_error(http_error),
+                        }
+                    },
                     Err(http_error) => return self.send_http_error(http_error),
                 }
 
@@ -109,17 +126,12 @@ pub trait OktaValidator : JWTHttpContext + CacheContext<StagedCache<OktaCacheDat
         self.resume_http_request();
     }
 
-    fn store_issuer_jwk(&mut self, issuer : &String, jwk : &OktaJWK) -> Result<(), HttpError> {
+    fn create_okta_cache_entry(&mut self, issuer : &String, jwk : &OktaJWK) -> Result<OktaCacheData, HttpError> {
         let config = self.get_okta_validator_config();
-        let cache_id = config.jwk_cache_id.clone();
         let cache_ttl = config.jwk_cache_ttl.clone();
-        let key = issuer.trim_matches('"').to_string() + &"/v1/keys".trim_matches('"').to_string();
+        let issuer = issuer.trim_matches('"').to_string() + &"/v1/keys".trim_matches('"').to_string();
 
-        let cache = self.get_mut_cache();
-
-        cache.insert(cache_id.to_string(), OktaCacheData { e: jwk.e.clone(), n: jwk.n.clone(), key, exp: cache_ttl.to_string() });
-
-        return Ok(())
+        Ok(OktaCacheData { e: jwk.e.clone(), n: jwk.n.clone(), issuer, exp: cache_ttl.to_string() })
     }
 
     fn validate_token(&self, e : &str, n : &str, token : &String) -> Result<(), HttpError> {

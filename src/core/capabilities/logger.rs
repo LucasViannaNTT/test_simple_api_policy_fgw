@@ -125,6 +125,6 @@ impl Logger {
     }
 }
 
-pub trait LoggerContext: Context {
+pub trait LoggerCapability: Context {
     fn get_logger(&self) -> &Logger;
 }

@@ -1,15 +1,9 @@
 use chrono::Utc;
 use proxy_wasm::traits::HttpContext;
 
-use crate::PolicyConfig;
-
 use super::error::{HttpError, HttpErrorBody};
 
 pub trait ExpandedHttpContext: HttpContext {
-
-    fn new(policy_config : PolicyConfig) -> Self;
-
-    fn get_policy_config(&self) -> &PolicyConfig;
 
     fn send_http_error(&self, http_error : HttpError) {
         let timestamp: String = Utc::now().to_rfc3339().to_string();

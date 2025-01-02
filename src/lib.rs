@@ -2,10 +2,11 @@ pub mod core;
 pub mod config;
 pub mod context;
 
+use core::root::HttpRootContext;
+
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
-use core::http::expansion::ExpandedHttpContext;
-use core::http::root::*;
+use test_jwt_validation::CustomHttpContext;
 use config::*;
 use context::*;
 
@@ -17,7 +18,18 @@ proxy_wasm::main! {{
 }}
 
 fn create_root_context(_: u32) -> Box<dyn RootContext> {
-    Box::new(HttpRootContext::new(PolicyConfig::default(), create_http_context))
+    Box::new(HttpRootContext::<PolicyConfig>::new(
+        PolicyConfig::default(), 
+        serialize_policy_config,
+        create_http_context
+    ))
+}
+
+fn serialize_policy_config(data: &[u8]) -> PolicyConfig {
+    match serde_json::from_slice(data) {
+        Ok(policy_config) => policy_config,
+        Err(_) => PolicyConfig::default(),
+    }
 }
 
 fn create_http_context(policy_config : PolicyConfig) -> Box<dyn HttpContext> {

@@ -2,28 +2,29 @@
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 
-use crate::config::*;
-
-pub struct HttpRootContext {
-    pub policy_config: PolicyConfig,
-    pub create_http_context: fn(PolicyConfig) -> Box<dyn HttpContext>,
+pub struct HttpRootContext<T: Clone> {
+    pub policy_config: T,
+    pub serialize: fn(&[u8]) -> T,
+    pub create_http_context: fn(T) -> Box<dyn HttpContext>,
 }
 
-impl HttpRootContext {
+impl<T: Clone> HttpRootContext<T> {
     pub fn new(
-        policy_config : PolicyConfig, 
-        create_http_context : fn(PolicyConfig) -> Box<dyn HttpContext>
+        policy_config : T, 
+        serialize : fn(&[u8]) -> T,
+        create_http_context : fn(T) -> Box<dyn HttpContext>
     ) -> Self {
         HttpRootContext {
             policy_config,
+            serialize,
             create_http_context,
         }
     }
 }
 
-impl Context for HttpRootContext {}
+impl<T: Clone> Context for HttpRootContext<T> {}
 
-impl RootContext for HttpRootContext {
+impl<T: Clone> RootContext for HttpRootContext<T> {
 
     fn create_http_context(&self, _: u32) -> Option<Box<dyn HttpContext>> {
         Some((self.create_http_context)(self.policy_config.clone()))
@@ -35,7 +36,7 @@ impl RootContext for HttpRootContext {
 
     fn on_configure(&mut self, _: usize) -> bool {
         if let Some(config_bytes) = self.get_plugin_configuration() {
-            self.policy_config = serde_json::from_slice(config_bytes.as_slice()).unwrap();
+            self.policy_config = (self.serialize)(config_bytes.as_slice());
         }
 
         true

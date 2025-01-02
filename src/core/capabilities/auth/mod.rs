@@ -9,7 +9,7 @@ pub mod jwt
     use serde::Deserialize;
     use serde_json::Value;
 
-    use crate::core::http::{error::HttpError, expansion::ExpandedHttpContext};
+    use crate::core::{error::HttpError, expansion::ExpandedHttpContext};
 
     #[derive(Default, Clone, Deserialize, Debug)]
     #[doc = "The JWT JOSE Header represents a JSON object whose members are the header parameters of the JWT."]
