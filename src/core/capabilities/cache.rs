@@ -1,13 +1,13 @@
 use std::collections::HashMap;
-
 use std::result::Result::Ok;
 use proxy_wasm::traits::Context;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::core::error::HttpError;
-
+use super::logger::Logger;
 
 #[doc = "Cache structure for storing data."]
+#[derive(Serialize, Deserialize)]
 pub struct Cache<T> {
     entries: HashMap<String, Entry<T>>,
 }
@@ -22,9 +22,19 @@ impl<T> Cache<T> {
     fn get_entry(&self, key: &str) -> Option<&Entry<T>> {
         self.entries.get(key)
     }
+
+    fn remove_entry(&mut self, key: &str) -> Option<Entry<T>> {
+        self.entries.remove(key)
+    }
+
+    fn insert_entry(&mut self, key: String, entry: Entry<T>) -> &T {
+        self.entries.insert(key.clone(), entry);
+        self.entries.get(&key).unwrap().get_data()
+    }
 }
 
 #[doc = "Data structure to hold Cache entry data."]
+#[derive(Serialize, Deserialize)]
 struct Entry<T> {
     data: T,
     last_cas: u32, 
@@ -34,6 +44,10 @@ impl<T> Entry<T> {
     fn get_data(&self) -> &T {
         &self.data
     }
+
+    fn new(data: T, last_cas: u32) -> Self {
+        Entry { data, last_cas }
+    }
 }
 
 #[doc = "Trait for enabling reading and writing to cache."]
@@ -41,86 +55,82 @@ pub trait CacheCapability<T>: Context {
     fn get_local_cache(&self) -> &Cache<T>;
     fn get_mut_local_cache(&mut self) -> &mut Cache<T>;
 
-    #[doc = "Reads data from cache, using local cache when possible to avoid deserialization."]
-    fn read_from_cache(&mut self, key: &str, fn_deserialization : fn(&[u8]) -> Result<T, HttpError>) -> Option<&T> {
-        
+    #[doc = "Reads data from cache, using local cache when possible to avoid deserialization.
+    \r\nReturns None if the data does not exist or could not be deserialized."]
+    fn read_from_cache(&mut self, key: &str, fn_deserialization: fn(&[u8]) -> Result<T, HttpError>) -> Option<&T> {
         let shared = self.get_shared_data(key);
-        let cache = self.get_mut_local_cache();
         
-        // Check if in local cache and get last CAS
-        let entry_last_cas = match cache.get_entry(key) {
-            Some(entry) => Some(entry.last_cas),
-            None => None,
-        };
-
-        // Check if last CAS is still valid 
-        if let Some(last_cas) = entry_last_cas {
-            if last_cas == match shared {
-                (Some(_), Some(cas)) => cas,
-                (_, _) => 0,
-            } {
-                // Return data from local cache
-                let data = cache.get_entry(key).unwrap().get_data();
-                return Some(data);
-            }
-        };
-
-        // If not in local cache, or local cache is not valid
-        // Try to read from shared data
         match shared {
-            // If the is some data
-            (Some(data), Some(cas)) => {
-
-                // Deserialize data
-                let value: T = match fn_deserialization(&data) {
-                    Ok(value) => value,
-                    Err(_) => return None, // TODO Throw this error to distinguish between no value and serialization error
-                };
-                
-                // Update local cache
-                cache.entries.insert(
-                    key.to_string(),
-                    Entry {
-                        data: value,
-                        last_cas: cas,
-                    },
-                );
-
-                Some(cache.get_entry(key)?.get_data())
-            },
-            // If there is no data
-            (_, _) => None,
+            // Shared Data for the entry exists
+            (Some(data), Some(shared_cas)) => {
+                let local_cas = self.get_local_cache().get_entry(key).map(|e| e.last_cas);
+                match local_cas {
+                    // Local Data for the entry exists
+                    Some(local_cas) if local_cas == shared_cas => {
+                        // Local Data is valid, so we return it
+                        self.get_local_cache().get_entry(key).map(|e| e.get_data())
+                    }
+                    // Local Data does not exist or invalid
+                    _ => {
+                        match fn_deserialization(&data) {
+                            Ok(value) => {
+                                // Serialize the data and update the Local Cache with the new CAS value
+                                let entry = Entry::new(value, shared_cas);
+                                let cache = self.get_mut_local_cache();
+                                Some(cache.insert_entry(key.to_string(), entry))
+                            }
+                            // Errror deserializing the data
+                            Err(_) => None
+                        }
+                    }
+                }
+            }
+            // Shared Data for the entry does not exist, so we remove the Local entry
+            _ => {
+                self.get_mut_local_cache().remove_entry(key);
+                None
+            }
         }
     }
 
-    #[doc = "Writes data to both shared and local cache."]
-    fn write_to_cache(&mut self, key: &str, data: T) -> Result<&T, HttpError> where T: Serialize {
+    #[doc = "Writes data to both shared and local cache.
+    \r\nReturns an error if the data could not be serialized or written to shared data."]
+    fn write_to_cache(&mut self, key: &str, data: T) -> Result<&T, HttpError> 
+    where T: Serialize {
+        let serialized = serde_json::to_string(&data)
+            .map_err(|e| HttpError::new(500, format!("Error serializing data: {}", e)))?;
 
-        let serialized = match serde_json::to_string(&data) {
-            Ok(serialized) => serialized,
-            Err(e) => return Err(HttpError::new(500, format!("Error serializing data: {}", e))),
-        };
+        let current_cas = self.get_local_cache().get_entry(key)
+            .map_or(0, |entry| entry.last_cas);
 
-        let serialized = serialized.as_bytes();
+        self.set_shared_data(key, Some(serialized.as_bytes()), None)
+            .map_err(|_| HttpError::new(500, "Error writing to shared data.".to_string()))?;
 
-        let last_cas = match self.get_local_cache().get_entry(key) {
-            Some(entry) => entry.last_cas,
-            None => 0,
-        };
+        Logger::log_info("Wrote to Shared Data.");
+
+        let new_cas = current_cas.checked_add(1)
+            .ok_or_else(|| HttpError::new(500, "CAS value overflow.".to_string()))?;
+
+        let entry = Entry::new(data, new_cas);
+        let cached = self.get_mut_local_cache().insert_entry(key.to_string(), entry);
+
+        Logger::log_info("Wrote to Local Cache.");
     
-        // Write to shared data with our timestamp as the CAS
-        if self.set_shared_data(key, Some(&serialized), None).is_ok() {
-            self.get_mut_local_cache().entries.insert(
-                key.to_string(),
-                Entry {
-                    data: data,
-                    last_cas: last_cas + 1,
-                },
-            );
-        } else {
-            return Err(HttpError::new(500, "Error writing to shared data.".to_string()));
-        };
+        Ok(cached)
+    }
 
-        Ok(self.get_local_cache().get_entry(key).unwrap().get_data())
+    #[doc = "Deletes data from cache.
+    \r\nIf lazy is true, only the shared data is removed, otherwise both shared and local data are removed.
+    \r\nReturns an error if the shared data could not be removed.
+    \r\nNote: Shared Data will still contain a key with no value as there is no API provided by proxy-wasm to completly remove data."]
+    fn delete_from_cache(&mut self, key: &str, lazy: bool) -> Result<(), HttpError> {
+        self.set_shared_data(key, None, None)
+            .map_err(|_| HttpError::new(500, "Error removing from shared data.".to_string()))?;
+
+        if !lazy {
+            self.get_mut_local_cache().remove_entry(key);
+        }
+        
+        Ok(())
     }
 }

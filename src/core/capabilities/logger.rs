@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
+use proxy_wasm::{hostcalls::log, types::LogLevel};
 
-use log::{debug, error, info, trace, warn};
-use proxy_wasm::{traits::Context, types::LogLevel};
+use crate::POLICY_ID;
 
 pub const LOG_LEVEL_TRACE: &str = "TRACE";
 pub const LOG_LEVEL_DEBUG: &str = "DEBUG";
@@ -22,109 +22,37 @@ pub const LOG_LEVELS: LazyLock<HashMap<String, LogLevel>> = LazyLock::new(|| {
     ])
 });
 
-#[doc = "The logger for the policy."]
-pub struct Logger {
-    log_id : u64,
-    policy_id : String,
-    log_level : LogLevel,
-}
+pub struct Logger {}
 
 impl Logger {
 
-    #[doc = "Creates a new logger."]
-    pub fn new(policy_id : String, log_level : LogLevel)-> Self {
-        Logger {
-            log_id : 0,
-            policy_id,
-            log_level
-        }
-    }
-
     #[doc = "Logs a trace message."]
-    pub fn log_trace(&mut self, message: &str) {
-        if self.should_log(&LogLevel::Trace) {
-            let message = format!("[{}] [TRACE]: {} - {}", self.policy_id, self.log_id, message);
-            self.log_id += 1;
-            trace!("{}", message);
-        }
+    pub fn log_trace(message: &str) {
+        let message = format!("[{}] [TRACE]: {}", POLICY_ID, message);
+        let _ = log(LogLevel::Trace, message.as_str());
     }
 
     #[doc = "Logs an info message."]
-    pub fn log_info(&mut self, message: &str) {
-        if self.should_log(&LogLevel::Info) {
-            let message = format!("[{}] [INFO]: {} - {}", self.policy_id, self.log_id, message);
-            self.log_id += 1;
-            info!("{}", message);
-        }
+    pub fn log_info(message: &str) {
+        let message = format!("[{}] [INFO]: {}", POLICY_ID, message);
+        let _ = log(LogLevel::Info, message.as_str());
     }
     
     #[doc = "Logs a debug message."]
-    pub fn log_debug(&mut self, message: &str) {
-        if self.should_log(&LogLevel::Debug) {
-            let message = format!("[{}] [DEBUG]: {} - {}", self.policy_id, self.log_id, message);
-            self.log_id += 1;
-            debug!("{}", message);
-        }
+    pub fn log_debug(message: &str) {
+        let message = format!("[{}] [DEBUG]: {}", POLICY_ID, message);
+        let _ = log(LogLevel::Debug, message.as_str());
     }
 
     #[doc = "Logs a warn message."]
-    pub fn log_warn(&mut self, message: &str) {
-        if self.should_log(&LogLevel::Warn) {
-            let message = format!("[{}] [WARN]: {} - {}", self.policy_id, self.log_id, message);
-            self.log_id += 1;
-            warn!("{}", message);
-        }
+    pub fn log_warn(message: &str) {
+        let message = format!("[{}] [WARN]: {}", POLICY_ID, message);
+        let _ = log(LogLevel::Warn, message.as_str());
     }
     
     #[doc = "Logs an error message."]
-    pub fn log_error(&mut self, message: &str) {
-        if self.should_log(&LogLevel::Error) {
-            let message = format!("[{}] [ERROR]: {} - {}", self.policy_id, self.log_id, message);
-            self.log_id += 1;
-            error!("{}", message);
-        }
+    pub fn log_error(message: &str) {
+        let message = format!("[{}] [ERROR]: {}", POLICY_ID, message);
+        let _ = log(LogLevel::Error, message.as_str());
     }
-
-    #[doc = "Determines if the logger should log the message."]
-    fn should_log(&self, log_level: &LogLevel) -> bool {
-        match self.log_level {
-            LogLevel::Trace => match log_level {
-                _ => true
-            },
-            LogLevel::Debug => match log_level {
-                LogLevel::Trace => false,
-                _ => true
-            },
-            LogLevel::Info => match log_level {
-                LogLevel::Trace => false,
-                LogLevel::Debug => false,
-                _ => true
-            },
-            LogLevel::Warn => match log_level {
-                LogLevel::Trace => false,
-                LogLevel::Debug => false,
-                LogLevel::Info => false,
-                _ => true
-            }
-            LogLevel::Error => match log_level {
-                LogLevel::Trace => false,
-                LogLevel::Debug => false,
-                LogLevel::Info => false,
-                LogLevel::Warn => false,
-                _ => true
-            }
-            LogLevel::Critical => match log_level {
-                LogLevel::Trace => false,
-                LogLevel::Debug => false,
-                LogLevel::Info => false,
-                LogLevel::Warn => false,
-                LogLevel::Error => false,
-                _ => true
-            }
-        }
-    }
-}
-
-pub trait LoggerCapability: Context {
-    fn get_logger(&self) -> &Logger;
 }

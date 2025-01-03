@@ -5,6 +5,7 @@ pub mod custom;
 
 use core::root::HttpRootContext;
 
+use custom::test_cache::TestCacheContext;
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
 use custom::test_jwt_validation::*;
@@ -31,6 +32,6 @@ fn serialize_policy_config(data: &[u8]) -> PolicyConfig {
     }
 }
 
-fn create_http_context(policy_config : PolicyConfig) -> Box<dyn HttpContext> {
-    Box::new(CustomHttpContext::new(policy_config))
+fn create_http_context(_ : PolicyConfig) -> Box<dyn HttpContext> {
+    Box::new(TestCacheContext::new())
 }
