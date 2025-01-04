@@ -142,7 +142,7 @@ impl HttpContext for TestJwtContext {
 
 impl ExpandedHttpContext for TestJwtContext {}
 
-impl JWTHttpContext for TestJwtContext {
+impl JWTHttpCapability for TestJwtContext {
     fn get_jwt(&self) -> Option<&JWT> {
         self.jwt.as_ref()
     }

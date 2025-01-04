@@ -1,10 +1,10 @@
 use chrono::Utc;
 use proxy_wasm::{traits::{Context, HttpContext}, types::Action};
 
-use crate::core::{capabilities::{auth::{jwt::JWT, okta::OktaCacheEntry}, cache::{Cache, CacheCapability}}, error::HttpError, expansion::ExpandedHttpContext};
+use crate::core::{capabilities::{auth::{jwt::JWT, okta::{OktaCacheData, OktaJWK}}, cache::{Cache, CacheCapability}}, error::HttpError, expansion::ExpandedHttpContext};
 
 pub struct TestCacheContext {
-    okta_cache: Cache<OktaCacheEntry>,
+    okta_cache: Cache<OktaCacheData>,
 }
 
 impl TestCacheContext {
@@ -14,26 +14,35 @@ impl TestCacheContext {
         }
     }
 
-    fn fake_okta_call(&mut self, issuer: &String) -> Action {
-        // In reality Okta would only send the JWK
-        // The Cache Entry would be created by ourselves
-        // See okta.rs::create_okta_cache_entry
-        let okta_cache_entry = OktaCacheEntry::new(
-            issuer.clone(), 
-            "some_e".to_string(), 
-            "some_n".to_string(), 
-            Utc::now().timestamp() + 10
-        );
-        // We would also need to check KID...
-        match self.write_to_cache(&issuer, okta_cache_entry) {
-            Ok(_) => (),
-            Err(http_error) => {
-                self.send_http_error(http_error);
-                return Action::Pause;
-            }
-        }
+    fn fake_okta_call(&mut self, issuer: &String, kid: &String) -> Action {
 
-        Action::Continue
+        if let Some(jwk) = match issuer.as_str() {
+            "iss1" => match kid.as_str() {
+                "kid1" => Some(OktaJWK { kid: "kid1".to_string(), e: "123".to_string(), n: "123".to_string() }),
+                "kid2" => Some(OktaJWK { kid: "kid2".to_string(),e: "234".to_string(), n: "234".to_string() }),
+                _ => None,
+            },
+            "iss2" => match kid.as_str() {
+                "kid1" => Some(OktaJWK { kid: "kid1".to_string(), e: "345".to_string(), n: "345".to_string() }),
+                "kid2" => Some(OktaJWK { kid: "kid2".to_string(), e: "456".to_string(), n: "456".to_string() }),
+                _ => None,
+            },
+            _ => None,
+        } {
+            let mut cache_entry = match self.read_from_cache(issuer.as_str(), |data| {
+                serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing Okta cache data.".to_string()))
+            }) {
+                Some(cache_entry) => cache_entry.clone(),
+                None => OktaCacheData::new(issuer.clone()),
+            };
+
+            cache_entry.keys.insert(kid.clone(), (jwk, Utc::now().timestamp() + 10));
+            let _ = self.write_to_cache(&issuer, cache_entry);
+            return Action::Continue
+        }
+        
+        self.send_http_error(HttpError::new(500, "Error calling Okta.".to_string()));
+        Action::Pause
     }
 }
 
@@ -65,32 +74,51 @@ impl HttpContext for TestCacheContext {
             }
         };
 
-        if let Err(http_error) = jwt.validate_claim_value("iss", &vec!["iss1".to_string(), "iss2".to_string()]) {
-            self.send_http_error(http_error);
-            return Action::Pause;
-        }
-
-        let issuer = jwt.claims_set.get::<String>("iss").unwrap(); 
-
-        if let Some(issuer_token) = self.read_from_cache(
-            &issuer, 
-            |data| {
-                match serde_json::from_slice(data) {
-                    Ok(okta_cache_data) => Ok(okta_cache_data),
-                    Err(_) => Err(HttpError::new(500, "Error parsing Okta cache data.".to_string())),
-                }
+        let issuer = match jwt.claims.get::<String>("iss") {
+            Ok(issuer) => issuer,
+            Err(http_error) => {
+                self.send_http_error(http_error);
+                return Action::Pause;
             }
-        ) {
-            if Utc::now().timestamp() > issuer_token.exp {
-                let _ = self.delete_from_cache(&issuer, true);
-                return self.fake_okta_call(&issuer)
+        };
+
+        let kid = match jwt.claims.get::<String>("kid") {
+            Ok(kid) => kid,
+            Err(http_error) => {
+                self.send_http_error(http_error);
+                return Action::Pause;
             }
-        } else {
-            return self.fake_okta_call(&issuer)
+        };
+
+        let do_call_okta = match self.read_from_cache(&issuer, |data| {
+            serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing Okta cache data.".to_string()))
+        }) {
+            // Issuer found in cache
+            Some(issuer_entry) => match issuer_entry.keys.get(kid.as_str()) {
+                // Issuer KID found
+                Some(issuer_jwk) => {
+                    if Utc::now().timestamp() < issuer_jwk.1{
+                        // JWK not expired, dont need to call Okta
+                        false
+                    } else {
+                        // JWK expired, need to call Okta
+                        let _ = self.delete_from_cache(&issuer, true);
+                        true
+                    }
+                },
+                // Issuer KID not found, need to call Okta
+                None => true
+            },
+            // Issuer not found in cache, need to call Okta
+            None => true
+        };
+        
+        if do_call_okta {
+            return self.fake_okta_call(&issuer, &kid);
         }
 
         let response = format!(
-            "[Cache Data] :\r\n {:?}\r\n", 
+            "[Local Cache Data] :\r\n {:?}\r\n", 
             serde_json::to_string(self.get_local_cache()).unwrap()
         );
 
@@ -99,16 +127,14 @@ impl HttpContext for TestCacheContext {
     }
 }
 
-impl Context for TestCacheContext {
+impl Context for TestCacheContext {}
 
-}
-
-impl CacheCapability<OktaCacheEntry> for TestCacheContext {
-    fn get_local_cache(&self) -> &Cache<OktaCacheEntry> {
+impl CacheCapability<OktaCacheData> for TestCacheContext {
+    fn get_local_cache(&self) -> &Cache<OktaCacheData> {
         &self.okta_cache
     }
 
-    fn get_mut_local_cache(&mut self) -> &mut Cache<OktaCacheEntry> {
+    fn get_mut_local_cache(&mut self) -> &mut Cache<OktaCacheData> {
         &mut self.okta_cache
     }
 }

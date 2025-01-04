@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::{capabilities::cache::CacheCapability, error::HttpError};
 
-use super::jwt::{JWTHttpContext, JWTRegisteredClaims};
+use super::jwt::{JWTHttpCapability, JWTRegisteredClaims};
 
 pub struct OktaValidatorConfig {
     pub timeout: u64,
@@ -17,16 +17,17 @@ pub struct OktaValidatorConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct OktaCacheEntry {
+pub struct OktaCacheData {
     pub issuer : String,
-    pub e : String,
-    pub n : String,
-    pub exp : i64,
+    pub keys : HashMap<String, (OktaJWK, i64)>,
 }
 
-impl OktaCacheEntry {
-    pub fn new(issuer : String, e : String, n : String, exp : i64) -> OktaCacheEntry {
-        OktaCacheEntry { issuer, e, n, exp }
+impl OktaCacheData {
+    pub fn new(issuer : String) -> OktaCacheData {
+        OktaCacheData { 
+            issuer, 
+            keys: HashMap::new(),
+        }
     }
 
     pub fn to_vec_u8(&self) -> Result<Vec<u8>, HttpError> {
@@ -37,7 +38,8 @@ impl OktaCacheEntry {
     }
 }
 
-struct OktaJWK {
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OktaJWK {
     pub kid : String,
     pub n : String,
     pub e : String,
@@ -87,7 +89,7 @@ impl OktaResponse {
     }
 }
 
-pub trait OktaValidator : JWTHttpContext + CacheCapability<OktaCacheEntry> + Context {
+pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCacheData> + Context {
     fn get_okta_validator_config(&self) -> &OktaValidatorConfig;
 
     #[doc = "Requests Okta for validation of the JWT."]
@@ -98,7 +100,7 @@ pub trait OktaValidator : JWTHttpContext + CacheCapability<OktaCacheEntry> + Con
         };
         
         let timeout = self.get_okta_validator_config().timeout;
-        let issuer = jwt.claims_set.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
+        let issuer = jwt.claims.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
         let issuer = issuer.trim_matches('"').to_string();
         let issuer_split = issuer.split('/').collect::<Vec<&str>>();
         let okta_endpoint = issuer_split[2];
@@ -109,7 +111,7 @@ pub trait OktaValidator : JWTHttpContext + CacheCapability<OktaCacheEntry> + Con
             None => return Err(HttpError::new(500, format!("Upstream for {} not found.", okta_endpoint))),
         };
 
-        match self.dispatch_http_call(
+        self.dispatch_http_call(
             upstream, 
             vec![
                 (":method", "GET"),
@@ -119,20 +121,11 @@ pub trait OktaValidator : JWTHttpContext + CacheCapability<OktaCacheEntry> + Con
             None, 
             vec![], 
             Duration::from_secs(timeout),
-        ) {
-            Ok(_) => Ok(()),
-            Err(err) => Err(HttpError::new(500, format!("Error calling Okta endpoint: {:?}", err))),
-        }
+        ).map(|_| ()).map_err(|err| HttpError::new(500, format!("Error dispatching Okta endpoint: {:?}", err)))
     }
 
     #[doc = "Handles okta validation response."]
     fn response_okta_validation(&mut self, _: u32, _: usize, body_size: usize, _: usize) {
-
-        fn create_okta_cache_entry(config: &OktaValidatorConfig, issuer : &String, jwk : &OktaJWK) -> Result<OktaCacheEntry, HttpError> {
-            let cache_ttl = config.jwk_cache_ttl.clone();
-            let issuer = issuer.trim_matches('"').to_string() + &"/v1/keys".trim_matches('"').to_string();
-            Ok(OktaCacheEntry::new(issuer, jwk.e.clone(), jwk.n.clone(), Utc::now().timestamp() + cache_ttl))
-        }
         
         let body = {
             let body = self.get_http_call_response_body(0, body_size);
@@ -148,7 +141,7 @@ pub trait OktaValidator : JWTHttpContext + CacheCapability<OktaCacheEntry> + Con
         };
 
         // We unwrap, as the validation should have passed before this function gets called.
-        let issuer = jwt.claims_set.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
+        let issuer = jwt.claims.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
         let raw_token = jwt.raw.clone();
 
         let okta_response = match OktaResponse::from_vec_u8(&body) {
@@ -156,28 +149,34 @@ pub trait OktaValidator : JWTHttpContext + CacheCapability<OktaCacheEntry> + Con
             Err(http_error) => return self.send_http_error(http_error.clone()),
         };
 
-        let kid_result = jwt.claims_set.get::<String>("kid");
+        let kid_result = jwt.claims.get::<String>("kid");
         let token_kid = match kid_result {
             Ok(kid) => kid,
             Err(http_error) => return self.send_http_error(http_error.clone()),
         };
 
-        for jwk in okta_response.jwks {
-            if jwk.kid == *token_kid {
-                match create_okta_cache_entry(self.get_okta_validator_config(), &issuer, &jwk) {
-                    Ok(cache_entry) => {
-                        match self.write_to_cache(&jwk.kid, cache_entry) {
-                            Ok(_) => (),
-                            Err(http_error) => return self.send_http_error(http_error),
-                        }
-                    },
-                    Err(http_error) => return self.send_http_error(http_error),
-                }
+        let config = self.get_okta_validator_config();
+        let issuer_str = issuer.as_str();
+        let expiration = Utc::now().timestamp() + config.jwk_cache_ttl;
 
-                match self.validate_token(&jwk.e, &jwk.n, &raw_token) {
-                    Ok(()) => (),
-                    Err(_) => (), // return self.send_http_error(http_error),
-                }
+        for jwk in okta_response.jwks {
+            if jwk.kid != *token_kid {
+                continue;
+            }
+
+            let mut cache_entry = match self.read_from_cache(issuer_str, |data| {
+                serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing Okta cache data.".to_string()))
+            }) {
+                Some(cache_entry) => cache_entry.clone(),
+                None => OktaCacheData::new(issuer.clone()),
+            };
+
+            cache_entry.keys.insert(jwk.kid.clone(), (jwk.clone(), expiration));
+            let _ = self.write_to_cache(issuer_str, cache_entry);
+
+            match self.validate_token(&jwk.e, &jwk.n, &raw_token) {
+                Ok(()) => (),
+                Err(_) => (), // return self.send_http_error(http_error),
             }
         }
 

@@ -100,21 +100,22 @@ pub trait CacheCapability<T>: Context {
         let serialized = serde_json::to_string(&data)
             .map_err(|e| HttpError::new(500, format!("Error serializing data: {}", e)))?;
 
-        let current_cas = self.get_local_cache().get_entry(key)
-            .map_or(0, |entry| entry.last_cas);
+        let shared_cas = self.get_shared_data(key).1
+            .unwrap_or(0);
 
-        self.set_shared_data(key, Some(serialized.as_bytes()), None)
+        Logger::log_info(&format!("Shared CAS Before: {}", shared_cas));
+
+        self.set_shared_data(key, Some(serialized.as_bytes()), Some(shared_cas))
             .map_err(|_| HttpError::new(500, "Error writing to shared data.".to_string()))?;
 
-        Logger::log_info("Wrote to Shared Data.");
+        let shared_cas = self.get_shared_data(key).1
+            .unwrap_or(0);
 
-        let new_cas = current_cas.checked_add(1)
-            .ok_or_else(|| HttpError::new(500, "CAS value overflow.".to_string()))?;
+        Logger::log_info(&format!("Shared CAS After: {}", shared_cas));
 
-        let entry = Entry::new(data, new_cas);
+        let entry = Entry::new(data, shared_cas);
+
         let cached = self.get_mut_local_cache().insert_entry(key.to_string(), entry);
-
-        Logger::log_info("Wrote to Local Cache.");
     
         Ok(cached)
     }
@@ -124,6 +125,7 @@ pub trait CacheCapability<T>: Context {
     \r\nReturns an error if the shared data could not be removed.
     \r\nNote: Shared Data will still contain a key with no value as there is no API provided by proxy-wasm to completly remove data."]
     fn delete_from_cache(&mut self, key: &str, lazy: bool) -> Result<(), HttpError> {
+        // This will also increase CAS
         self.set_shared_data(key, None, None)
             .map_err(|_| HttpError::new(500, "Error removing from shared data.".to_string()))?;
 

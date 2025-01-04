@@ -81,8 +81,8 @@ pub mod jwt
     #[derive(Debug)]
     #[doc = "The JWT struct represents a JSON Web Token (JWT) as defined by RFC 7519."]
     pub struct JWT{
-        pub jose_header: JWTJOSEHeader,
-        pub claims_set: JWTClaimsSet,
+        pub header: JWTJOSEHeader,
+        pub claims: JWTClaimsSet,
         pub signature: String,
         pub raw: String,
     }
@@ -154,8 +154,8 @@ pub mod jwt
             let jwt_signature = parts[2].to_string();
             
             Ok(JWT {
-                jose_header: jwt_jose_header,
-                claims_set: jwt_claims_set,
+                header: jwt_jose_header,
+                claims: jwt_claims_set,
                 signature: jwt_signature,
                 raw: token.clone(), // TODO: Maybe use a reference
             })
@@ -164,7 +164,7 @@ pub mod jwt
         #[doc = "Validates the claims of the JWT against the expected claims.
         \n\rIf any of the claims are not expected, an error is returned."]
         pub fn validate_claims(&self, expected_claims: HashMap<&str, &str>) -> Result<(), HttpError> {
-            for (key, _value) in &self.claims_set.claims {
+            for (key, _value) in &self.claims.claims {
                 if !expected_claims.contains_key(key.as_str()) {
                     return Err(HttpError::new(401, "Error decoding token, claim is not handled.".to_string()));
                 }
@@ -176,7 +176,7 @@ pub mod jwt
         #[doc = "Validates the algorithm of the JWT against the expected algorithm.
         \n\rIf the algorithm value does not match the expected, an error is returned."]
         pub fn validate_algorithm(&self, expected_algorithms: &Vec<String>) -> Result<(), HttpError> {
-            let alg = &self.jose_header.algorithm;
+            let alg = &self.header.algorithm;
             
             if !expected_algorithms.contains(&alg.to_string()) {
                 return Err(HttpError::new(401, "Error decoding token, algorithm does not match expected.".to_string()));
@@ -188,7 +188,7 @@ pub mod jwt
         #[doc = "Validates the expiration of the JWT.
         \n\rIf the expiration is not found, has expired, or not in the correct format, an error is returned."]
         pub fn validate_expiration(&self) -> Result<(), HttpError> {
-            let exp : i64 = match self.claims_set.get(JWTRegisteredClaims::ExpirationTime.id()) {
+            let exp : i64 = match self.claims.get(JWTRegisteredClaims::ExpirationTime.id()) {
                 Ok(exp) => exp,
                 Err(http_error) => return Err(http_error),
             };
@@ -204,7 +204,7 @@ pub mod jwt
         #[doc = "Validates that a claim is within some expected values.
         \n\rIf the claim is not found, or does not match oneof the expected values or cannot be parsed, an error is returned."]
         pub fn validate_claim_value<T>(&self, claim_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + std::str::FromStr {
-            let claim : T = match self.claims_set.get(claim_id) {
+            let claim : T = match self.claims.get(claim_id) {
                 Ok(claim) => claim,
                 Err(http_error) => return Err(http_error),
             };
@@ -217,7 +217,7 @@ pub mod jwt
         }
     }
 
-    pub trait JWTHttpContext : ExpandedHttpContext {
+    pub trait JWTHttpCapability : ExpandedHttpContext {
         fn get_jwt(&self) -> Option<&JWT>;
         fn get_mut_jwt(&mut self) -> Option<&mut JWT>;
     }
