@@ -17,15 +17,13 @@ pub struct OktaValidatorConfig {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct OktaCacheData {
-    pub issuer : String,
-    pub keys : HashMap<String, (OktaJWK, i64)>,
+pub struct OktaCacheIssuerData {
+    pub keys : HashMap<String, OktaCacheIssuerKeyData>,
 }
 
-impl OktaCacheData {
-    pub fn new(issuer : String) -> OktaCacheData {
-        OktaCacheData { 
-            issuer, 
+impl OktaCacheIssuerData {
+    pub fn new() -> OktaCacheIssuerData {
+        OktaCacheIssuerData { 
             keys: HashMap::new(),
         }
     }
@@ -34,6 +32,23 @@ impl OktaCacheData {
         match serde_json::to_vec(self) {
             Ok(vec) => Ok(vec),
             Err(_) => Err(HttpError::new(500, "Error serializing Okta cache entry.".to_string())),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct OktaCacheIssuerKeyData {
+    pub n : String,
+    pub e : String,
+    pub exp : i64,
+}
+
+impl OktaCacheIssuerKeyData {
+    pub fn new(n : String, e : String, exp : i64) -> OktaCacheIssuerKeyData {
+        OktaCacheIssuerKeyData {
+            n,
+            e,
+            exp,
         }
     }
 }
@@ -89,7 +104,7 @@ impl OktaResponse {
     }
 }
 
-pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCacheData> + Context {
+pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCacheIssuerData> + Context {
     fn get_okta_validator_config(&self) -> &OktaValidatorConfig;
 
     #[doc = "Requests Okta for validation of the JWT."]
@@ -168,10 +183,12 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
                 serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing Okta cache data.".to_string()))
             }) {
                 Some(cache_entry) => cache_entry.clone(),
-                None => OktaCacheData::new(issuer.clone()),
+                None => OktaCacheIssuerData::new(),
             };
 
-            cache_entry.keys.insert(jwk.kid.clone(), (jwk.clone(), expiration));
+            let key_data = OktaCacheIssuerKeyData::new(jwk.n.clone(), jwk.e.clone(), expiration);
+            cache_entry.keys.insert(jwk.kid.clone(), key_data);
+
             let _ = self.write_to_cache(issuer_str, cache_entry);
 
             match self.validate_token(&jwk.e, &jwk.n, &raw_token) {

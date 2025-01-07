@@ -105,6 +105,7 @@ pub trait CacheCapability<T>: Context {
 
         Logger::log_info(&format!("Shared CAS Before: {}", shared_cas));
 
+        // TODO Add Cache Namespace Prefix for the key, so different caches do not write to the same shared data key
         self.set_shared_data(key, Some(serialized.as_bytes()), Some(shared_cas))
             .map_err(|_| HttpError::new(500, "Error writing to shared data.".to_string()))?;
 
