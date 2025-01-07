@@ -18,6 +18,7 @@ impl TestCacheContext {
 
         if let Some(issuer_key_data) = match issuer.as_str() {
             "iss1" => match kid.as_str() {
+                // Okta could return multiple keys for a single issuer
                 "kid1" => Some(OktaCacheIssuerKeyData { e: "123".to_string(), n: "123".to_string(), exp: Utc::now().timestamp() + 10 }),
                 "kid2" => Some(OktaCacheIssuerKeyData { e: "234".to_string(), n: "234".to_string(), exp: Utc::now().timestamp() + 10 }),
                 _ => None,
@@ -42,7 +43,7 @@ impl TestCacheContext {
         }
         
         self.send_http_error(HttpError::new(500, "Error calling Okta.".to_string()));
-        Action::Pause
+        Action::Continue
     }
 }
 
@@ -114,9 +115,9 @@ impl HttpContext for TestCacheContext {
             // Issuer not found in cache, need to call Okta
             None => true
         };
-        
+
         if do_call_okta {
-            return self.fake_okta_call(&issuer, &kid);
+            let _ = self.fake_okta_call(&issuer, &kid);
         }
 
         let response = format!(
