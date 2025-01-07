@@ -42,6 +42,19 @@
                 "type": "string"
             }
         },
+        "do-validate-scope": {
+            "title": "Validate Scope",
+            "description": "Whether to validate the scope of the JWT token",
+            "type": "boolean"
+        },
+        "valid-scopes": {
+            "title": "Valid Scopes",
+            "description": "List of valid scopes",
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
         "do-validate-expiration": {
             "title": "Validate Expiration",
             "description": "Whether to validate the expiration of the JWT token",
@@ -55,9 +68,8 @@
                 "TRACE",
                 "DEBUG",
                 "INFO",
-                "WARM",
-                "ERROR",
-                "CRITICAL"
+                "WARN",
+                "ERROR"
             ]
         }
     },

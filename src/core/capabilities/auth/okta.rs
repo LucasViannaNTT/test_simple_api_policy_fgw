@@ -16,6 +16,17 @@ pub struct OktaValidatorConfig {
     pub jwk_cache_ttl: i64,
 }
 
+impl OktaValidatorConfig {
+    pub fn new(timeout: u64, upstream: HashMap<String, String>, jwk_cache_id: String, jwk_cache_ttl: i64) -> OktaValidatorConfig {
+        OktaValidatorConfig {
+            timeout,
+            upstream,
+            jwk_cache_id,
+            jwk_cache_ttl,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct OktaCacheIssuerData {
     pub keys : HashMap<String, OktaCacheIssuerKeyData>,
@@ -109,22 +120,37 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
 
     #[doc = "Requests Okta for validation of the JWT."]
     fn request_okta_validation(&mut self) -> Result<(), HttpError> {
+
         let jwt = match self.get_jwt() {
             Some(jwt) => jwt,
             None => return Err(HttpError::new(500, "Jwt not found in request context.".to_string())),
         };
         
-        let timeout = self.get_okta_validator_config().timeout;
+        // Should have already been validated
         let issuer = jwt.claims.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
+
         let issuer = issuer.trim_matches('"').to_string();
         let issuer_split = issuer.split('/').collect::<Vec<&str>>();
-        let okta_endpoint = issuer_split[2];
-        let okta_issuer_id = issuer_split[4];
+
+        let okta_endpoint = match issuer_split.get(2) {
+            Some(endpoint) => *endpoint,
+            None => return Err(HttpError::new(500, "No Okta endpoint found in issuer.".to_string())),
+        };
+
+        let okta_issuer_id = match issuer_split.get(4) {
+            Some(issuer_id) => *issuer_id,
+            None => return Err(HttpError::new(500, "No Okta issuer ID found in issuer.".to_string())),
+        };
 
         let upstream = match self.get_okta_validator_config().upstream.get(&okta_endpoint.to_string()) {
             Some(upstream) => upstream,
-            None => return Err(HttpError::new(500, format!("Upstream for {} not found.", okta_endpoint))),
+            None => match self.get_okta_validator_config().upstream.get("default") {
+                Some(upstream) => upstream,
+                None => return Err(HttpError::new(500, "No default upstream found.".to_string())),
+            }
         };
+
+        let timeout = self.get_okta_validator_config().timeout;
 
         self.dispatch_http_call(
             upstream, 
@@ -140,19 +166,23 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
     }
 
     #[doc = "Handles okta validation response."]
-    fn response_okta_validation(&mut self, _: u32, _: usize, body_size: usize, _: usize) {
+    fn response_okta_validation(&mut self, _: u32, _: usize, body_size: usize, _: usize) -> Result<(), HttpError> {
         
-        let body = {
+        let body = match {
             let body = self.get_http_call_response_body(0, body_size);
+            
             match body {
-                Some(body) => body.clone(),
-                None => return self.send_http_error(HttpError::new(500, "No response body found.".to_string())),
+                Some(body) => Ok(body.clone()),
+                None => return Err(HttpError::new(500, "No response body found.".to_string())),
             }
+        } {
+            Ok(body) => body,
+            Err(http_error) => return http_error,
         };
 
         let jwt = match self.get_mut_jwt() {
             Some(jwt) => jwt,
-            None => return self.send_http_error(HttpError::new(500, "Jwt not found in request context.".to_string())),
+            None => return Err(HttpError::new(500, "Jwt not found in request context.".to_string())),
         };
 
         // We unwrap, as the validation should have passed before this function gets called.
@@ -161,13 +191,13 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
 
         let okta_response = match OktaResponse::from_vec_u8(&body) {
             Ok(resp) => resp,
-            Err(http_error) => return self.send_http_error(http_error.clone()),
+            Err(http_error) => return Err(http_error),
         };
 
         let kid_result = jwt.claims.get::<String>("kid");
         let token_kid = match kid_result {
             Ok(kid) => kid,
-            Err(http_error) => return self.send_http_error(http_error.clone()),
+            Err(http_error) => return Err(http_error),
         };
 
         let config = self.get_okta_validator_config();
@@ -193,11 +223,11 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
 
             match self.validate_token(&jwk.e, &jwk.n, &raw_token) {
                 Ok(()) => (),
-                Err(_) => (), // return self.send_http_error(http_error),
+                Err(http_error) => return Err(http_error),
             }
         }
 
-        self.resume_http_request();
+        return Ok(())
     }
 
     fn validate_token(&self, e : &str, n : &str, token : &String) -> Result<(), HttpError> {

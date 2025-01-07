@@ -5,10 +5,9 @@ pub mod custom;
 
 use core::root::HttpRootContext;
 
-use custom::test_cache::TestCacheContext;
 use proxy_wasm::traits::*;
 use proxy_wasm::types::*;
-use custom::test_jwt_validation::*;
+use custom::test_okta_validation::*;
 
 pub const POLICY_ID: &str = "test-simple-api-policy-fgw";
 
@@ -18,20 +17,20 @@ proxy_wasm::main! {{
 }}
 
 fn create_root_context(_: u32) -> Box<dyn RootContext> {
-    Box::new(HttpRootContext::<PolicyConfig>::new(
-        PolicyConfig::default(), 
+    Box::new(HttpRootContext::<TestOktaPolicyConfig>::new(
+        TestOktaPolicyConfig::default(), 
         serialize_policy_config,
         create_http_context
     ))
 }
 
-fn serialize_policy_config(data: &[u8]) -> PolicyConfig {
+fn serialize_policy_config(data: &[u8]) -> TestOktaPolicyConfig {
     match serde_json::from_slice(data) {
         Ok(policy_config) => policy_config,
-        Err(_) => PolicyConfig::default(),
+        Err(_) => TestOktaPolicyConfig::default(),
     }
 }
 
-fn create_http_context(_ : PolicyConfig) -> Box<dyn HttpContext> {
-    Box::new(TestCacheContext::new())
+fn create_http_context(policy_config : TestOktaPolicyConfig) -> Box<dyn HttpContext> {
+    Box::new(TestOktaContext::new(policy_config))
 }

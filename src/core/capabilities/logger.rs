@@ -8,7 +8,6 @@ pub const LOG_LEVEL_DEBUG: &str = "DEBUG";
 pub const LOG_LEVEL_INFO: &str = "INFO";
 pub const LOG_LEVEL_WARN: &str = "WARN";
 pub const LOG_LEVEL_ERROR: &str = "ERROR";
-pub const LOG_LEVEL_CRITICAL: &str = "CRITICAL";
 
 #[doc = "Log Levels for Deserialization."]
 // LazyLock enables the creation of the hashmap on its first access.
