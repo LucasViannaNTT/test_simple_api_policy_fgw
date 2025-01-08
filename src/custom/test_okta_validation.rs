@@ -13,9 +13,10 @@ use crate::core::capabilities::cache::Cache;
 use crate::core::capabilities::cache::CacheCapability;
 use crate::core::error::HttpError;
 use crate::core::expansion::ExpandedHttpContext;
-use crate::core::logger::Logger;
 use crate::core::logger::LOG_LEVELS;
 
+/// Context for testing Okta JWT validation functionality.
+/// Handles JWT validation, caching, and Okta integration.
 pub struct TestOktaContext {
     policy_config: TestOktaPolicyConfig,
     okta_cache: Cache<OktaCacheIssuerData>,
@@ -23,8 +24,8 @@ pub struct TestOktaContext {
     jwt : Option<JWT>,
 }
 
-#[doc = "The configuration for the policy.
-\n\r Must match schema.json properties."]
+/// Configuration for the Okta JWT validation policy.
+/// Must match schema.json properties.
 #[derive(Default, Clone, Deserialize)]
 pub struct TestOktaPolicyConfig {
 
@@ -62,6 +63,7 @@ pub struct TestOktaPolicyConfig {
 impl TestOktaContext {
     pub fn new(policy_config : TestOktaPolicyConfig) -> Self {
 
+        // Set log level from policy config, defaulting to Trace if not specified or invalid
         proxy_wasm::set_log_level(match &policy_config.log_level {
             Some(log_level) => match LOG_LEVELS.get(log_level) {
                 Some(log_level) => *log_level,
@@ -70,6 +72,7 @@ impl TestOktaContext {
             None => LogLevel::Trace
         });
 
+        // Create new context with default configuration and predefined Okta endpoints
         let context = TestOktaContext {
             policy_config,
             okta_cache: Cache::new(),
@@ -98,6 +101,7 @@ impl TestOktaContext {
 
 impl Context for TestOktaContext {
     fn on_http_call_response(&mut self, _: u32, _: usize, body_size: usize, _: usize) {
+        // Process Okta validation response and resume or error the HTTP request accordingly
         match self.response_okta_validation(body_size) {
             Ok(()) => self.resume_http_request(),
             Err(http_error) => self.send_http_error(http_error),
@@ -107,7 +111,7 @@ impl Context for TestOktaContext {
 
 impl HttpContext for TestOktaContext {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
-
+        // Extract Authorization header
         let token: String = match self.get_http_request_header("Authorization") {
             Some(auth) => auth,
             None => {
@@ -116,11 +120,13 @@ impl HttpContext for TestOktaContext {
             }
         };
 
+        // Validate token format matches Bearer token pattern
         if let Err(http_error) = JWT::validate_token_format(&r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string(), &token) {
             self.send_http_error(http_error);
             return Action::Pause;
         }
 
+        // Parse JWT from token
         let token = token.split(" ").collect::<Vec<&str>>()[1].to_string();
         self.jwt = match JWT::from_token(&token) {
             Ok(jwt) => Some(jwt),
@@ -132,7 +138,9 @@ impl HttpContext for TestOktaContext {
 
         let jwt = self.jwt.as_ref().unwrap();
 
+        // Perform all configured validations
         if let Err(http_error) = {
+            // If the policy requires validation and the policy provides expected valid values, we validate
             if self.policy_config.do_validate_algorithm.is_some() && self.policy_config.valid_algorithms.is_some() {
                 jwt.validate_header_value("alg", self.policy_config.valid_algorithms.as_ref().unwrap())
             } else {Ok(())}
@@ -157,22 +165,20 @@ impl HttpContext for TestOktaContext {
                 jwt.validate_expiration()
             } else {Ok(())}
         }) {
+            // If any validation fails, send error
             self.send_http_error(http_error);
             return Action::Pause;
         }
 
-        let kid = match jwt.header.get::<String>("kid") {
-            Ok(kid) => kid,
-            Err(http_error) => {
-                self.send_http_error(http_error);
-                return Action::Pause;
-            }
-        };
+        // Extract key ID from JWT header
+        // We can unwrap since we've already expected "kid"
+        let kid = jwt.header.get::<String>("kid").unwrap();
 
+        // Get issuer from claims
+        // We can unwrap since we've already validated "iss"
         let issuer = jwt.claims.get::<String>("iss").unwrap();
 
-        Logger::log_debug("Claims validated.");
-
+        // Check if we need to call Okta for validation
         let do_call_okta = match self.read_from_cache(&issuer, |data| {
             serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing Okta cache data.".to_string()))
         }) {
@@ -187,6 +193,7 @@ impl HttpContext for TestOktaContext {
                         // JWK expired, remove KID, need to call Okta
                         let mut issuer_data = issuer_data.clone();
                         issuer_data.keys.remove(kid.as_str());
+                        // Overwrite entry with updated issuer data
                         let _ = self.write_to_cache(&issuer, issuer_data);
                         true
                     }
