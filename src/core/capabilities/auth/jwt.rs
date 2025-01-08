@@ -8,24 +8,35 @@ use crate::core::{error::HttpError, expansion::ExpandedHttpContext};
 
 #[derive(Default, Clone, Deserialize, Debug)]
 #[doc = "The JWT JOSE Header represents a JSON object whose members are the header parameters of the JWT."]
-pub struct JWTJOSEHeader {
-    #[doc = "The typ (type) Header Parameter defined by RFC 7519."]
-    #[serde(alias = "typ")]
-    pub typ: String,
-    #[doc = "The alg (algorithm) Header Parameter defined by RFC 7519."]
-    #[serde(alias = "alg")]
-    pub algorithm: String,
+pub struct JWTHeader {
+    #[serde(flatten)]
+    headers: HashMap<String, Value>,
+}
+
+impl JWTHeader {
+    #[doc = "Returns the value of a header.
+    \n\rIf the header is not found, or cannot be parsed, an error is returned."]
+    pub fn get<T>(&self, header: &str) -> Result<T, HttpError> where T: FromStr, {
+        if let Some(value) = self.headers.get(header) {
+            value.as_str()
+                .ok_or_else(|| HttpError::new(401, format!("Error decoding token, header '{}' cannot be parsed to string.", header)))?
+                .parse::<T>()
+                .map_err(|_| HttpError::new(401, format!("Failed to parse header '{}' as {}", header, std::any::type_name::<T>())))
+        } else {
+            Err(HttpError::new(401, format!("Error decoding token, header '{}' not found.", header)))
+        }
+    }
 }
 
 #[derive(Default, Clone, Deserialize, Debug)]
 #[doc = "The JWT Claims Set represents a JSON object whose members are the claims conveyed by the JWT.
 \n\rThe Claims will later be the payload of the JWT."]
-pub struct JWTClaimsSet {
+pub struct JWTClaims {
     #[serde(flatten)]
     claims: HashMap<String, Value>,
 }
 
-impl JWTClaimsSet {
+impl JWTClaims {
 
     #[doc = "Returns the value of a claim.
     \n\rIf the claim is not found, or cannot be parsed, an error is returned."]
@@ -76,8 +87,8 @@ impl JWTRegisteredClaims {
 #[derive(Debug)]
 #[doc = "The JWT struct represents a JSON Web Token (JWT) as defined by RFC 7519."]
 pub struct JWT{
-    pub header: JWTJOSEHeader,
-    pub claims: JWTClaimsSet,
+    pub header: JWTHeader,
+    pub claims: JWTClaims,
     pub signature: String,
     pub raw: String,
 }
@@ -136,12 +147,12 @@ impl JWT {
             Err(http_error) => return Err(http_error),
         };
 
-        let jwt_jose_header: JWTJOSEHeader = match serde_json::from_str(&header) {
+        let jwt_jose_header: JWTHeader = match serde_json::from_str(&header) {
             Ok(header) => header,
             Err(_) => return Err(HttpError::new(401, "Error decoding token, header does not follow expected format.".to_string())),
         };
         
-        let jwt_claims_set: JWTClaimsSet = match serde_json::from_str(&payload) {
+        let jwt_claims_set: JWTClaims = match serde_json::from_str(&payload) {
             Ok(payload) => payload,
             Err(_) => return Err(HttpError::new(401, "Error decoding token, payload does not follow expected format.".to_string())),
         };
@@ -156,25 +167,21 @@ impl JWT {
         })
     }
 
-    #[doc = "Validates the claims of the JWT against the expected claims.
-    \n\rIf any of the claims are not expected, an error is returned."]
-    pub fn validate_claims(&self, expected_claims: HashMap<&str, &str>) -> Result<(), HttpError> {
-        for (key, _value) in &self.claims.claims {
-            if !expected_claims.contains_key(key.as_str()) {
-                return Err(HttpError::new(401, "Error decoding token, claim is not handled.".to_string()));
-            }
+    #[doc = "Expect the JWT to have a certain claim.
+    \n\rIf the claim is not present, an error is returned."]
+    pub fn expect_claim(&self, expected_claim: &str) -> Result<(), HttpError> {
+        if !self.claims.claims.contains_key(expected_claim) {
+            return Err(HttpError::new(401, "Error decoding token, claim is not expected.".to_string()));
         }
 
         Ok(())
     }
 
-    #[doc = "Validates the algorithm of the JWT against the expected algorithm.
-    \n\rIf the algorithm value does not match the expected, an error is returned."]
-    pub fn validate_algorithm(&self, expected_algorithms: &Vec<String>) -> Result<(), HttpError> {
-        let alg = &self.header.algorithm;
-        
-        if !expected_algorithms.contains(&alg.to_string()) {
-            return Err(HttpError::new(401, "Error decoding token, algorithm does not match expected.".to_string()));
+    #[doc = "Expect the JWT to have a certain header.
+    \n\rIf the header not present, an error is returned."]
+    pub fn expect_header(&self, expected_header: &str) -> Result<(), HttpError> {
+        if !self.header.headers.contains_key(expected_header) {
+            return Err(HttpError::new(401, "Error decoding token, header is not expected.".to_string()));
         }
 
         Ok(())
@@ -191,6 +198,21 @@ impl JWT {
         let now = Utc::now().timestamp();
         if now > exp {
             return Err(HttpError::new(401, "Error decoding token, token has expired.".to_string()));
+        }
+
+        Ok(())
+    }
+
+    #[doc = "Validates that a header is within some expected values.
+    \n\rIf the header is not found, or does not match oneof the expected values or cannot be parsed, an error is returned."]
+    pub fn validate_header_value<T>(&self, header_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + std::str::FromStr {
+        let header : T = match self.header.get(header_id) {
+            Ok(claim) => claim,
+            Err(http_error) => return Err(http_error),
+        };
+
+        if !expected_values.contains(&header) {
+            return Err(HttpError::new(401, format!("Error decoding token, {} claim value does not match expected.", header_id)));
         }
 
         Ok(())
@@ -213,6 +235,6 @@ impl JWT {
 }
 
 pub trait JWTHttpCapability : ExpandedHttpContext {
-    fn get_jwt(&self) -> Option<&JWT>;
-    fn get_mut_jwt(&mut self) -> Option<&mut JWT>;
+    fn get_jwt(&self) -> &JWT;
+    fn get_mut_jwt(&mut self) -> &mut JWT;
 }

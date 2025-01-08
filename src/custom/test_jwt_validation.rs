@@ -86,13 +86,16 @@ impl HttpContext for TestJwtContext {
         Logger::log_debug("Decoding JWT...");
 
         let token = token.split(" ").collect::<Vec<&str>>()[1].to_string();
-        let jwt: JWT = match JWT::from_token(&token) {
-            Ok(jwt) => jwt,
+        self.jwt = match JWT::from_token(&token) {
+            Ok(jwt) => Some(jwt),
             Err(http_error) => {
                 self.send_http_error(http_error);
                 return Action::Pause;
             }
         };
+
+        let jwt = self.jwt.as_ref().unwrap();
+
         Logger::log_debug("JWT decoded.");
         Logger::log_debug("JWT: ");
         Logger::log_debug(&format!("{:?}", jwt));
@@ -100,7 +103,7 @@ impl HttpContext for TestJwtContext {
         Logger::log_debug("Validating claims...");
         if let Err(http_error) = {
             if self.policy_config.do_validate_algorithm.is_some() && self.policy_config.valid_algorithms.is_some() {
-                let result = jwt.validate_algorithm(self.policy_config.valid_algorithms.as_ref().unwrap());
+                let result = jwt.validate_claim_value("alg", self.policy_config.valid_algorithms.as_ref().unwrap());
                 Logger::log_debug(&format!("Valid Algorithm: {}", result.is_ok()));
                 result
             } else {Ok(())}
@@ -143,11 +146,11 @@ impl HttpContext for TestJwtContext {
 impl ExpandedHttpContext for TestJwtContext {}
 
 impl JWTHttpCapability for TestJwtContext {
-    fn get_jwt(&self) -> Option<&JWT> {
-        self.jwt.as_ref()
+    fn get_jwt(&self) -> &JWT {
+        self.jwt.as_ref().unwrap()
     }
     
-    fn get_mut_jwt(&mut self) -> Option<&mut JWT> {
-        self.jwt.as_mut()
+    fn get_mut_jwt(&mut self) -> &mut JWT {
+        self.jwt.as_mut().unwrap()
     }
 }

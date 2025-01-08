@@ -121,54 +121,46 @@ impl HttpContext for TestOktaContext {
         }
 
         let token = token.split(" ").collect::<Vec<&str>>()[1].to_string();
-        let jwt: JWT = match JWT::from_token(&token) {
-            Ok(jwt) => jwt,
+        self.jwt = match JWT::from_token(&token) {
+            Ok(jwt) => Some(jwt),
             Err(http_error) => {
                 self.send_http_error(http_error);
                 return Action::Pause;
             }
         };
 
+        let jwt = self.jwt.as_ref().unwrap();
+
         if let Err(http_error) = {
             if self.policy_config.do_validate_algorithm.is_some() && self.policy_config.valid_algorithms.is_some() {
-                let result = jwt.validate_algorithm(self.policy_config.valid_algorithms.as_ref().unwrap());
-                result
+                jwt.validate_header_value("alg", self.policy_config.valid_algorithms.as_ref().unwrap())
             } else {Ok(())}
         }.and_then(|_| {
             if self.policy_config.do_validate_issuer.is_some() && self.policy_config.valid_issuers.is_some() {
-                let result = jwt.validate_claim_value::<String>(
-                    JWTRegisteredClaims::Issuer.id(), 
-                    self.policy_config.valid_issuers.as_ref().unwrap(),
-                );
-                result
+                jwt.expect_header("kid")
+            } else {Ok(())}
+        }).and_then(|_| {
+            if self.policy_config.do_validate_issuer.is_some() && self.policy_config.valid_issuers.is_some() {
+                jwt.validate_claim_value::<String>(JWTRegisteredClaims::Issuer.id(),self.policy_config.valid_issuers.as_ref().unwrap())
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_audience.is_some() && self.policy_config.valid_audiences.is_some() {
-                let result = jwt.validate_claim_value::<String>(
-                    JWTRegisteredClaims::Audience.id(), 
-                    self.policy_config.valid_audiences.as_ref().unwrap(),
-                );
-                result
+                jwt.validate_claim_value::<String>(JWTRegisteredClaims::Audience.id(),self.policy_config.valid_audiences.as_ref().unwrap())
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_scope.is_some() && self.policy_config.valid_scopes.is_some() {
-                let result = jwt.validate_claim_value::<String>(
-                    "scp", 
-                    self.policy_config.valid_scopes.as_ref().unwrap(),
-                );
-                result
+                jwt.validate_claim_value::<String>("scp",self.policy_config.valid_scopes.as_ref().unwrap())
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_expiration.is_some() {
-                let result = jwt.validate_expiration();
-                result
+                jwt.validate_expiration()
             } else {Ok(())}
         }) {
             self.send_http_error(http_error);
             return Action::Pause;
         }
 
-        let kid = match jwt.claims.get::<String>("kid") {
+        let kid = match jwt.header.get::<String>("kid") {
             Ok(kid) => kid,
             Err(http_error) => {
                 self.send_http_error(http_error);
@@ -224,12 +216,12 @@ impl HttpContext for TestOktaContext {
 impl ExpandedHttpContext for TestOktaContext {}
 
 impl JWTHttpCapability for TestOktaContext {
-    fn get_jwt(&self) -> Option<&JWT> {
-        self.jwt.as_ref()
+    fn get_jwt(&self) -> &JWT {
+        self.jwt.as_ref().unwrap()
     }
     
-    fn get_mut_jwt(&mut self) -> Option<&mut JWT> {
-        self.jwt.as_mut()
+    fn get_mut_jwt(&mut self) -> &mut JWT {
+        self.jwt.as_mut().unwrap()
     }
 }
 

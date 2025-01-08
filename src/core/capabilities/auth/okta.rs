@@ -121,10 +121,7 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
     #[doc = "Requests Okta for validation of the JWT."]
     fn request_okta_validation(&mut self) -> Result<(), HttpError> {
 
-        let jwt = match self.get_jwt() {
-            Some(jwt) => jwt,
-            None => return Err(HttpError::new(500, "Jwt not found in request context.".to_string())),
-        };
+        let jwt = self.get_jwt();
         
         // Should have already been validated
         let issuer = jwt.claims.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
@@ -180,10 +177,7 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
             Err(http_error) => return http_error,
         };
 
-        let jwt = match self.get_mut_jwt() {
-            Some(jwt) => jwt,
-            None => return Err(HttpError::new(500, "Jwt not found in request context.".to_string())),
-        };
+        let jwt = self.get_mut_jwt();
 
         // We unwrap, as the validation should have passed before this function gets called.
         let issuer = jwt.claims.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap().clone(); 
