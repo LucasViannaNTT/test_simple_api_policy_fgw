@@ -3,9 +3,10 @@ use proxy_wasm::types::*;
 use serde::Deserialize;
 
 use crate::core::capabilities::auth::jwt::*;
-use crate::core::capabilities::logger::*;
 use crate::core::error::HttpError;
 use crate::core::expansion::ExpandedHttpContext;
+use crate::core::logger::Logger;
+use crate::core::logger::LOG_LEVELS;
 
 pub struct TestJwtContext {
     policy_config: PolicyConfig,

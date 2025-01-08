@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::error::HttpError;
 
-#[doc = "Cache structure for storing data."]
+#[doc = "Cache structure for storing local data."]
 #[derive(Serialize, Deserialize)]
 pub struct Cache<T> {
     #[serde(flatten)]
@@ -19,6 +19,8 @@ impl<T> Cache<T> {
         }
     }
 
+    #[doc = "Returns some Entry from the cache.
+    \r\nIf no entry is found, returns None."]
     fn get_entry(&self, key: &str) -> Option<&Entry<T>> {
         self.entries.get(key)
     }
@@ -33,7 +35,7 @@ impl<T> Cache<T> {
     }
 }
 
-#[doc = "Data structure to hold Cache entry data."]
+#[doc = "Contains Data and CAS of a Cache Entry."]
 #[derive(Serialize, Deserialize)]
 struct Entry<T> {
     data: T,
@@ -41,22 +43,47 @@ struct Entry<T> {
 }
 
 impl<T> Entry<T> {
+    #[doc ="Returns the data contained by the entry."]
     fn get_data(&self) -> &T {
         &self.data
     }
 
+    #[doc = "Creates a new Entry containing Data and CAS."]
     fn new(data: T, last_cas: u32) -> Self {
         Entry { data, last_cas }
     }
 }
 
-#[doc = "Trait for enabling reading and writing to cache."]
+/// Enables use of Local Cache and abstracts proxy-wasm's shared data.
 pub trait CacheCapability<T>: Context {
     fn get_local_cache(&self) -> &Cache<T>;
     fn get_mut_local_cache(&mut self) -> &mut Cache<T>;
 
-    #[doc = "Reads data from cache, using local cache when possible to avoid deserialization.
-    \r\nReturns None if the data does not exist or could not be deserialized."]
+    /// Reads data from cache, using local cache when possible to avoid deserialization.
+    /// 
+    /// **Returns None:** if <code>key</code> not in Shared Data or <code>Entry</code> deserialization failed.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Suppose Shared Data contains {"k1":"d1"} (with CAS 1) as an entry
+    /// // Suppose Local Cache does not contain "k1" as an entry.
+    /// self.read_from_cache("k1", |data| serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing cache data.".to_string())));
+    /// // Entry not in local cache, Entry is deserialized and added to local cache
+    /// // Local Cache now contains {"k1":{"data":{"d1"}, "last_cas":1}}
+    /// 
+    /// self.read_from_cache("k1", |data| serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing cache data.".to_string())));
+    /// // Entry in local cache, CAS matches, Entry is directly returned from local cache
+    /// 
+    /// // Suppose Shared Data entry "k1" changed to {"k1":"d2"} (with CAS 2)
+    /// self.read_from_cache("k1", |data| serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing cache data.".to_string())));
+    /// // Entry in local cache, CAS doesnt match, Entry is deserialized and added to local cache
+    /// // Local Cache now contains {"k1":{"data":{"d1"}, "last_cas":2}}
+    /// 
+    /// // Suppose Shared Data entry "k1" changed to {"k1":""} (with CAS 3)
+    /// self.read_from_cache("k1", |data| serde_json::from_slice(data).map_err(|_| HttpError::new(500, "Error parsing cache data.".to_string())));
+    /// // Entry Data is None in Shared Data, Entry is removed from local cache
+    /// // Local Cache now does not contain "k1"
+    /// ```
     fn read_from_cache(&mut self, key: &str, fn_deserialization: fn(&[u8]) -> Result<T, HttpError>) -> Option<&T> {
         let shared = self.get_shared_data(key);
         
@@ -93,8 +120,21 @@ pub trait CacheCapability<T>: Context {
         }
     }
 
-    #[doc = "Writes data to both shared and local cache.
-    \r\nReturns an error if the data could not be serialized or written to shared data."]
+    /// Writes data to both Shared Data and Local Cache.
+    /// 
+    /// **Returns Err:** if <code>data</code> serialization failed or failed to write to Shared Data.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Suppose Shared Data and Local Cache do not contain "k1" as an entry.
+    /// self.write_to_cache("k1", "d1".to_string());
+    /// // Shared Data now contains {"k1":"d1"} (with CAS 1) as an entry
+    /// // Local Cache now contains {"k1":{"data":"d1","last_cas":1}} as an entry
+    /// 
+    /// self.write_to_cache("k1", "d2".to_string());
+    /// // Shared Data now contains {"k1":"d2"} (with CAS 2) as an entry
+    /// // Local Cache now contains {"k1":{"data":"d2","last_cas":2}} as an entry
+    /// ```
     fn write_to_cache(&mut self, key: &str, data: T) -> Result<&T, HttpError> 
     where T: Serialize {
         let serialized = serde_json::to_string(&data)
@@ -116,11 +156,26 @@ pub trait CacheCapability<T>: Context {
     
         Ok(cached)
     }
-
-    #[doc = "Deletes data from cache.
-    \r\nIf lazy is true, only the shared data is removed, otherwise both shared and local data are removed.
-    \r\nReturns an error if the shared data could not be removed.
-    \r\nNote: Shared Data will still contain a key with no value as there is no API provided by proxy-wasm to completly remove data."]
+    /// Deletes an <code>Entry</code> from both Shared Data and Local Cache. If <code>lazy</code> is <code>true</code>, only the Shared Data is removed, otherwise both are removed.
+    /// 
+    /// **Returns Err:** if <code>key</code> could not be removed.
+    /// 
+    /// **Note:** Shared Data will still contain a key with no value as there is no API provided by proxy-wasm to completly remove data.
+    /// 
+    /// # Examples
+    /// ```
+    /// // Suppose Shared Data contains {"k1":"d1"} (with CAS 1) as an entry
+    /// // Suppose Local Cache contains {"k1":{"data":"d1", "last_cas":1}} as an entry
+    /// self.delete_from_cache("k1", false);
+    /// // Shared Data now contains {"k1":""} (with CAS 2) as an entry
+    /// // Local Cache now does not contain "k1" as an entry
+    /// 
+    /// // Suppose Shared Data contains {"k2":"d1"} (with CAS 1) as an entry
+    /// // Suppose Local Cache contains {"k2":{"data":"d1", "last_cas":1}} as an entry
+    /// self.delete_from_cache("k2", true);
+    /// // Shared Data now contains {"k2":""} (with CAS 2) as an entry
+    /// // Local Cache still contains {"k2":{"data":"d1", "last_cas":1}} as an entry
+    /// ```
     fn delete_from_cache(&mut self, key: &str, lazy: bool) -> Result<(), HttpError> {
         // This will also increase CAS
         self.set_shared_data(key, None, None)

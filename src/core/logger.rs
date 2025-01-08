@@ -21,35 +21,36 @@ pub const LOG_LEVELS: LazyLock<HashMap<String, LogLevel>> = LazyLock::new(|| {
     ])
 });
 
+/// Provides logging functionality
 pub struct Logger {}
 
 impl Logger {
 
-    #[doc = "Logs a trace message."]
+    /// Logs a trace message.
     pub fn log_trace(message: &str) {
         let message = format!("[{}] [TRACE]: {}", POLICY_ID, message);
         let _ = log(LogLevel::Trace, message.as_str());
     }
 
-    #[doc = "Logs an info message."]
+    /// Logs an info message.
     pub fn log_info(message: &str) {
         let message = format!("[{}] [INFO]: {}", POLICY_ID, message);
         let _ = log(LogLevel::Info, message.as_str());
     }
     
-    #[doc = "Logs a debug message."]
+    /// Logs a debug message.
     pub fn log_debug(message: &str) {
         let message = format!("[{}] [DEBUG]: {}", POLICY_ID, message);
         let _ = log(LogLevel::Debug, message.as_str());
     }
 
-    #[doc = "Logs a warn message."]
+    /// Logs an warn message.
     pub fn log_warn(message: &str) {
         let message = format!("[{}] [WARN]: {}", POLICY_ID, message);
         let _ = log(LogLevel::Warn, message.as_str());
     }
     
-    #[doc = "Logs an error message."]
+    /// Logs an error message.
     pub fn log_error(message: &str) {
         let message = format!("[{}] [ERROR]: {}", POLICY_ID, message);
         let _ = log(LogLevel::Error, message.as_str());

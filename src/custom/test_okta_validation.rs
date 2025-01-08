@@ -11,9 +11,10 @@ use crate::core::capabilities::auth::okta::OktaValidatorCapability;
 use crate::core::capabilities::auth::okta::OktaValidatorConfig;
 use crate::core::capabilities::cache::Cache;
 use crate::core::capabilities::cache::CacheCapability;
-use crate::core::capabilities::logger::*;
 use crate::core::error::HttpError;
 use crate::core::expansion::ExpandedHttpContext;
+use crate::core::logger::Logger;
+use crate::core::logger::LOG_LEVELS;
 
 pub struct TestOktaContext {
     policy_config: TestOktaPolicyConfig,
@@ -96,8 +97,8 @@ impl TestOktaContext {
 }
 
 impl Context for TestOktaContext {
-    fn on_http_call_response(&mut self, token_id: u32, num_headers: usize, body_size: usize, num_trailers: usize) {
-        match self.response_okta_validation(token_id, num_headers, body_size, num_trailers) {
+    fn on_http_call_response(&mut self, _: u32, _: usize, body_size: usize, _: usize) {
+        match self.response_okta_validation(body_size) {
             Ok(()) => self.resume_http_request(),
             Err(http_error) => self.send_http_error(http_error),
         }

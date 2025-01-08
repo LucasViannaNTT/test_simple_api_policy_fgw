@@ -95,21 +95,50 @@ pub struct JWT{
 
 impl JWT {
 
-    #[doc = "Validates the format of a token against a regular expression.
-    \n\rIf the token does not follow the expected regular expression, an error is returned."]
+    /// Validates the JWT against the registered claims and expiration time.
+    /// 
+    /// **Returns Err:** If the token does not follow the expected regular expression.
+    /// 
+    /// # Examples
+    /// ```
+    /// let token = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
+    /// let regex = &r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string();
+    /// 
+    /// assert_eq!(JWT::validate_token_format(regex, &token), Ok(()));
+    /// 
+    /// let regex = &r"^[0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string();
+    /// 
+    /// assert_ne!(JWT::validate_token_format(regex, &token), Ok(()));
+    /// ```
     pub fn validate_token_format(regex : &String, token : &String) -> Result<(), HttpError> {
         let re = Regex::new(regex).unwrap();
         
         if !re.is_match(token) {
             return Err(HttpError::new(401, "Error decoding token, signature does not follow expected regular expression.".to_string()));
         }
-
         Ok(())
     }
 
-    #[doc = "Creates a new JWT instance from a token string, containing the header, payload and signature.
-    \n\r If the token is not in base64, or any of the parts are not in the expected format, an error is returned.
-    \n\r Reminder: The Format must have been removed (e.g., Bearer ) before calling this method."]
+    /// Creates a new <code>JWT</code> instance from a <code>token</code>, containing the header, payload and signature.
+    /// 
+    /// **Returns Err:** If the <code>token</code> is not in base64, or any of the parts are not in the expected format.
+    /// 
+    /// **Note:** The prefix must have been removed (e.g., Bearer ) before calling this method.
+    /// 
+    /// # Examples
+    /// ```
+    /// // This token is valid
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
+    /// let jwt = JWT::from_token(&token);
+    /// 
+    /// assert!(jwt.is_ok());
+    /// 
+    /// // This token is invalid
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3".to_string();
+    /// let jwt = JWT::from_token(&token);
+    /// 
+    /// assert!(jwt.is_err());
+    /// ```
     pub fn from_token(token: &String) -> Result<Self, HttpError> {
 
         fn decode(encoded: String) -> Result<String, HttpError> {
@@ -167,18 +196,42 @@ impl JWT {
         })
     }
 
-    #[doc = "Expect the JWT to have a certain claim.
-    \n\rIf the claim is not present, an error is returned."]
-    pub fn expect_claim(&self, expected_claim: &str) -> Result<(), HttpError> {
-        if !self.claims.claims.contains_key(expected_claim) {
+    /// Expect the <code>JWT</code> to have a certain <code>claim</code>.
+    /// 
+    /// **Returns Err:** If the <code>claim</code> is not present.
+    /// 
+    /// # Examples
+    /// ```
+    /// // This token is valid and carries only 'iss' claim
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxMiJ9.Rrel01QzcLt_r4txEdRbRiwrgg6awu97jWjRKmia6LI".to_string();
+    /// let jwt = JWT::from_token(&token).unwrap();
+    /// 
+    /// assert!(jwt.expect_claim("iss").is_ok());
+    /// 
+    /// assert!(jwt.expect_claim("sub").is_err());
+    /// ```
+    pub fn expect_claim(&self, claim: &str) -> Result<(), HttpError> {
+        if !self.claims.claims.contains_key(claim) {
             return Err(HttpError::new(401, "Error decoding token, claim is not expected.".to_string()));
         }
 
         Ok(())
     }
 
-    #[doc = "Expect the JWT to have a certain header.
-    \n\rIf the header not present, an error is returned."]
+    /// Expect the <code>JWT</code> to have a certain <code>header</code>.
+    /// 
+    /// **Returns Err:** If the <code>header</code> is not present.
+    /// 
+    /// # Examples
+    /// ```
+    /// // This token is valid and carries 'alg' and 'typ' headers
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxMiJ9.Rrel01QzcLt_r4txEdRbRiwrgg6awu97jWjRKmia6LI".to_string();
+    /// let jwt = JWT::from_token(&token).unwrap();
+    /// 
+    /// assert!(jwt.expect_header("alg").is_ok());
+    /// 
+    /// assert!(jwt.expect_header("kid").is_err());
+    /// ```
     pub fn expect_header(&self, expected_header: &str) -> Result<(), HttpError> {
         if !self.header.headers.contains_key(expected_header) {
             return Err(HttpError::new(401, "Error decoding token, header is not expected.".to_string()));
@@ -187,8 +240,22 @@ impl JWT {
         Ok(())
     }
 
-    #[doc = "Validates the expiration of the JWT.
-    \n\rIf the expiration is not found, has expired, or not in the correct format, an error is returned."]
+    /// Validates the <code>exp</code> of the <code>JWT</code>.
+    /// 
+    /// **Returns Err:** If the <code>exp</code> is not found, has expired, or not in the correct format.
+    /// 
+    /// # Examples
+    /// ```
+    /// // This token is valid and carries 'exp' header with a value of 10
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxMiJ9.Rrel01QzcLt_r4txEdRbRiwrgg6awu97jWjRKmia6LI".to_string();
+    /// let jwt = JWT::from_token(&token).unwrap();
+    /// 
+    /// // Suppose Utc::now().timestamp() will return 10 or lesser
+    /// assert!(jwt.validate_expiration("exp").is_ok());
+    /// 
+    /// // Suppose Utc::now().timestamp() will return 11 or greater
+    /// assert!(jwt.validate_expiration("exp").is_err());
+    /// ```
     pub fn validate_expiration(&self) -> Result<(), HttpError> {
         let exp : i64 = match self.claims.get(JWTRegisteredClaims::ExpirationTime.id()) {
             Ok(exp) => exp,
@@ -203,8 +270,23 @@ impl JWT {
         Ok(())
     }
 
-    #[doc = "Validates that a header is within some expected values.
-    \n\rIf the header is not found, or does not match oneof the expected values or cannot be parsed, an error is returned."]
+    /// Validates that a header is within some <code>expected values</code>.
+    /// 
+    /// **Returns Err:** If the header is not found, or does not match one of the expected values or cannot be parsed, an error is returned."
+    /// 
+    /// # Examples
+    /// ```
+    /// // This token is valid and carries a 'alg' header with a value of "HS256" and a header 'typ' with a value of "JWT".
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxMiJ9.Rrel01QzcLt_r4txEdRbRiwrgg6awu97jWjRKmia6LI".to_string();
+    /// let jwt = JWT::from_token(&token).unwrap();
+    /// let expected_alg_values = vec!["HS256".to_string()];
+    /// 
+    /// assert!(jwt.validate_header_value("alg", expected_alg_values).is_ok());
+    /// 
+    /// let expected_typ_values = vec!["JWK".to_string()];
+    /// 
+    /// assert!(jwt.validate_header_value("typ", expected_typ_values).is_err());
+    /// ```
     pub fn validate_header_value<T>(&self, header_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + std::str::FromStr {
         let header : T = match self.header.get(header_id) {
             Ok(claim) => claim,
@@ -218,8 +300,23 @@ impl JWT {
         Ok(())
     }
 
-    #[doc = "Validates that a claim is within some expected values.
-    \n\rIf the claim is not found, or does not match oneof the expected values or cannot be parsed, an error is returned."]
+        /// Validates that a claim is within some <code>expected values</code>.
+    /// 
+    /// **Returns Err:** If the claim is not found, or does not match one of the expected values or cannot be parsed, an error is returned."
+    /// 
+    /// # Examples
+    /// ```
+    /// // This token is valid and carries a 'iss' claim with a value of "12" and a 'exp' claim with a value of 10.
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxMiJ9.Rrel01QzcLt_r4txEdRbRiwrgg6awu97jWjRKmia6LI".to_string();
+    /// let jwt = JWT::from_token(&token).unwrap();
+    /// let expected_iss_values = vec!["12".to_string()];
+    /// 
+    /// assert!(jwt.validate_claim_value("iss", expected_iss_values).is_ok());
+    /// 
+    /// let expected_exp_values = vec![100];
+    /// 
+    /// assert!(jwt.validate_claim_value("exp", expected_exp_values).is_err());
+    /// ```
     pub fn validate_claim_value<T>(&self, claim_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + std::str::FromStr {
         let claim : T = match self.claims.get(claim_id) {
             Ok(claim) => claim,
@@ -234,6 +331,7 @@ impl JWT {
     }
 }
 
+/// Enables access to JWT data in HttpContext.
 pub trait JWTHttpCapability : ExpandedHttpContext {
     fn get_jwt(&self) -> &JWT;
     fn get_mut_jwt(&mut self) -> &mut JWT;
