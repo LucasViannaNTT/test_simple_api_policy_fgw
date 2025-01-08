@@ -142,11 +142,11 @@ impl HttpContext for TestOktaContext {
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_issuer.is_some() && self.policy_config.valid_issuers.is_some() {
-                jwt.validate_claim_value::<String>(JWTRegisteredClaims::Issuer.id(),self.policy_config.valid_issuers.as_ref().unwrap())
+                jwt.validate_claim_value::<String>("iss",self.policy_config.valid_issuers.as_ref().unwrap())
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_audience.is_some() && self.policy_config.valid_audiences.is_some() {
-                jwt.validate_claim_value::<String>(JWTRegisteredClaims::Audience.id(),self.policy_config.valid_audiences.as_ref().unwrap())
+                jwt.validate_claim_value::<String>("aud",self.policy_config.valid_audiences.as_ref().unwrap())
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_scope.is_some() && self.policy_config.valid_scopes.is_some() {
@@ -169,7 +169,7 @@ impl HttpContext for TestOktaContext {
             }
         };
 
-        let issuer = jwt.claims.get::<String>(JWTRegisteredClaims::Issuer.id()).unwrap();
+        let issuer = jwt.claims.get::<String>("iss").unwrap();
 
         Logger::log_debug("Claims validated.");
 

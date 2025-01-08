@@ -58,33 +58,6 @@ impl JWTClaims {
 }
 
 #[derive(Debug)]
-#[doc = "The JwtRegisteredClaims enum represents the registered claim names defined by RFC 7519."]
-pub enum JWTRegisteredClaims {
-    Issuer,
-    Subject,
-    Audience,
-    ExpirationTime,
-    NotBefore,
-    IssuedAt,
-    JWTID,
-}
-
-impl JWTRegisteredClaims {
-    #[doc = "Returns the name of the claim."]
-    pub fn id(&self) -> &str {
-        match self {
-            JWTRegisteredClaims::Issuer => "iss",
-            JWTRegisteredClaims::Subject => "sub",
-            JWTRegisteredClaims::Audience => "aud",
-            JWTRegisteredClaims::ExpirationTime => "exp",
-            JWTRegisteredClaims::NotBefore => "nbf",
-            JWTRegisteredClaims::IssuedAt => "iat",
-            JWTRegisteredClaims::JWTID => "jti",
-        }
-    }
-}
-
-#[derive(Debug)]
 #[doc = "The JWT struct represents a JSON Web Token (JWT) as defined by RFC 7519."]
 pub struct JWT{
     pub header: JWTHeader,
@@ -257,7 +230,7 @@ impl JWT {
     /// assert!(jwt.validate_expiration("exp").is_err());
     /// ```
     pub fn validate_expiration(&self) -> Result<(), HttpError> {
-        let exp : i64 = match self.claims.get(JWTRegisteredClaims::ExpirationTime.id()) {
+        let exp : i64 = match self.claims.get("exp") {
             Ok(exp) => exp,
             Err(http_error) => return Err(http_error),
         };

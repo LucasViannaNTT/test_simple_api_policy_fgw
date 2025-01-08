@@ -67,7 +67,6 @@ impl Context for TestJwtContext {}
 impl HttpContext for TestJwtContext {
     fn on_http_request_headers(&mut self, _num_headers: usize, _end_of_stream: bool) -> Action {
 
-        Logger::log_debug("Checking for Authorization header...");
         let token: String = match self.get_http_request_header("Authorization") {
             Some(auth) => auth,
             None => {
@@ -75,16 +74,11 @@ impl HttpContext for TestJwtContext {
                 return Action::Pause;
             }
         };
-        Logger::log_debug("Token found in Authorization header.");
 
-        Logger::log_debug("Validating token format...");
         if let Err(http_error) = JWT::validate_token_format(&r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string(), &token) {
             self.send_http_error(http_error);
             return Action::Pause;
         }
-        Logger::log_debug("Token format validated.");
-
-        Logger::log_debug("Decoding JWT...");
 
         let token = token.split(" ").collect::<Vec<&str>>()[1].to_string();
         self.jwt = match JWT::from_token(&token) {
@@ -97,40 +91,21 @@ impl HttpContext for TestJwtContext {
 
         let jwt = self.jwt.as_ref().unwrap();
 
-        Logger::log_debug("JWT decoded.");
-        Logger::log_debug("JWT: ");
-        Logger::log_debug(&format!("{:?}", jwt));
-
-        Logger::log_debug("Validating claims...");
         if let Err(http_error) = {
             if self.policy_config.do_validate_algorithm.is_some() && self.policy_config.valid_algorithms.is_some() {
-                let result = jwt.validate_claim_value("alg", self.policy_config.valid_algorithms.as_ref().unwrap());
-                Logger::log_debug(&format!("Valid Algorithm: {}", result.is_ok()));
-                result
+                jwt.validate_claim_value("alg", self.policy_config.valid_algorithms.as_ref().unwrap())
             } else {Ok(())}
         }.and_then(|_| {
             if self.policy_config.do_validate_issuer.is_some() && self.policy_config.valid_issuers.is_some() {
-                let result = jwt.validate_claim_value::<String>(
-                    JWTRegisteredClaims::Issuer.id(), 
-                    self.policy_config.valid_issuers.as_ref().unwrap(),
-                );
-                Logger::log_debug(&format!("Valid Issuer: {}", result.is_ok()));
-                result
+                jwt.validate_claim_value::<String>("iss", self.policy_config.valid_issuers.as_ref().unwrap())
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_audience.is_some() && self.policy_config.valid_audiences.is_some() {
-                let result = jwt.validate_claim_value::<String>(
-                    JWTRegisteredClaims::Audience.id(), 
-                    self.policy_config.valid_audiences.as_ref().unwrap(),
-                );
-                Logger::log_debug(&format!("Valid Audience: {}", result.is_ok()));
-                result
+                jwt.validate_claim_value::<String>("aud", self.policy_config.valid_audiences.as_ref().unwrap())
             } else {Ok(())}
         }).and_then(|_| {
             if self.policy_config.do_validate_expiration.is_some() {
-                let result = jwt.validate_expiration();
-                Logger::log_debug(&format!("Valid Expiration: {}", result.is_ok()));
-                result
+                jwt.validate_expiration()
             } else {Ok(())}
         })
         {

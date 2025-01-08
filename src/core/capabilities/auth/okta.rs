@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::{capabilities::cache::CacheCapability, error::HttpError};
 
-use super::jwt::{JWTHttpCapability, JWTRegisteredClaims};
+use super::jwt::JWTHttpCapability;
 
 /// Configuration for the Okta validator service.
 pub struct OktaValidatorConfig {
@@ -170,7 +170,7 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
 
         let jwt = self.get_jwt();
         
-        let issuer = match jwt.claims.get::<String>(JWTRegisteredClaims::Issuer.id()) {
+        let issuer = match jwt.claims.get::<String>("iss") {
             Ok(jwt_issuer) => jwt_issuer,
             Err(http_error) => return Err(http_error),
         };
