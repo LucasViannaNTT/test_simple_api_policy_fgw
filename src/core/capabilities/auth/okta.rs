@@ -14,28 +14,23 @@ pub struct OktaValidatorConfig {
     /// Timeout duration in seconds for Okta requests
     pub timeout: u64,
     /// Mapping of Okta endpoints to their upstream servers
-    /// 
-    /// To define a fallback endpoint, map the `"default"` key with the desired endpoint.
     pub upstream : HashMap<String, String>,
-    // Unique identifier for the JWK cache
-    pub jwk_cache_id: String,
-    /// Time-to-live in seconds for cached JWK entries
-    pub jwk_cache_ttl: i64,
+    /// Time-to-live in seconds for cached JWK Issuer keys
+    pub issuer_key_data_ttl: i64,
 }
 
 impl OktaValidatorConfig {
-    /// Creates a new OktaValidatorConfig with the specified parameters.
+    /// Creates a new `OktaValidatorConfig` with the specified parameters.
     /// # Arguments
     /// * `timeout` - Request timeout in seconds
     /// * `upstream` - HashMap mapping Okta endpoints to upstream servers. To define a fallback endpoint, map the `"default"` key with the desired endpoint.
     /// * `jwk_cache_id` - Identifier for the JWK cache
-    /// * `jwk_cache_ttl` - Cache TTL in seconds
-    pub fn new(timeout: u64, upstream: HashMap<String, String>, jwk_cache_id: String, jwk_cache_ttl: i64) -> OktaValidatorConfig {
+    /// * `issuer_key_data_ttl` - Issuer Key Data TTL in seconds
+    pub fn new(timeout: u64, upstream: HashMap<String, String>, issuer_key_data_ttl: i64) -> OktaValidatorConfig {
         OktaValidatorConfig {
             timeout,
             upstream,
-            jwk_cache_id,
-            jwk_cache_ttl,
+            issuer_key_data_ttl,
         }
     }
 }
@@ -322,7 +317,7 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
 
         let okta_config = self.get_okta_validator_config();
         let jwt_issuer_str = jwt_issuer.as_str();
-        let expiration = Utc::now().timestamp() + okta_config.jwk_cache_ttl;
+        let expiration = Utc::now().timestamp() + okta_config.issuer_key_data_ttl;
 
         for jwk in okta_response.keys {
             // Ignore KIDs that don't match the JWT's KID

@@ -6,16 +6,22 @@ use serde_json::Value;
 
 use crate::core::{error::HttpError, expansion::ExpandedHttpContext};
 
+/// The JWT JOSE Header represents a JSON object whose members are the header parameters of the JWT.
 #[derive(Default, Clone, Deserialize, Debug)]
-#[doc = "The JWT JOSE Header represents a JSON object whose members are the header parameters of the JWT."]
 pub struct JWTHeader {
     #[serde(flatten)]
     headers: HashMap<String, Value>,
 }
 
 impl JWTHeader {
-    #[doc = "Returns the value of a header.
-    \n\rIf the header is not found, or cannot be parsed, an error is returned."]
+    /// Returns the value of a header.
+    /// 
+    /// # Returns 
+    /// 
+    /// - `Ok(T)` if the header is found and could be parsed to `T`.
+    /// - `Err(HttpError)` if:
+    ///     - The header is not found.
+    ///     - The header cannot be parsed to `T`.
     pub fn get<T>(&self, header: &str) -> Result<T, HttpError> where T: FromStr, {
         if let Some(value) = self.headers.get(header) {
             value.as_str()
@@ -28,9 +34,8 @@ impl JWTHeader {
     }
 }
 
+/// The JWT Claims Set represents a JSON object whose members are the claims conveyed by the JWT.
 #[derive(Default, Clone, Deserialize, Debug)]
-#[doc = "The JWT Claims Set represents a JSON object whose members are the claims conveyed by the JWT.
-\n\rThe Claims will later be the payload of the JWT."]
 pub struct JWTClaims {
     #[serde(flatten)]
     claims: HashMap<String, Value>,
@@ -38,8 +43,13 @@ pub struct JWTClaims {
 
 impl JWTClaims {
 
-    #[doc = "Returns the value of a claim.
-    \n\rIf the claim is not found, or cannot be parsed, an error is returned."]
+    /// Returns the value of a claim.
+    /// 
+    /// # Returns
+    /// - `Ok(T)` if the claim is found and could be parsed to `T`.
+    /// - `Err(HttpError)` if:
+    ///     - The claim is not found.
+    ///     - The claim cannot be parsed to `T`.
     pub fn get<T>(&self, claim: &str) -> Result<T, HttpError> where T: FromStr, {
         if let Some(value) = self.claims.get(claim) {
             value.as_str()
@@ -57,8 +67,8 @@ impl JWTClaims {
     }
 }
 
+/// The JWT struct represents a JSON Web Token (JWT) as defined by RFC 7519.
 #[derive(Debug)]
-#[doc = "The JWT struct represents a JSON Web Token (JWT) as defined by RFC 7519."]
 pub struct JWT{
     pub header: JWTHeader,
     pub claims: JWTClaims,

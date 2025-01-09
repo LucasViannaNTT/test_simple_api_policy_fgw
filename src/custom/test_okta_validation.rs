@@ -89,7 +89,6 @@ impl TestOktaContext {
                     ("rlus-int-test.okta.com".to_string(), "rlus-okta-internal-test.default.svc".to_string()),
                     ("default".to_string(), "okta-nonprod.default.svc".to_string())
                 ]), 
-                "okta-issuer-cache".to_string(), 
                 10
             ),
             jwt : None,
