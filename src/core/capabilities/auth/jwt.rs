@@ -1,10 +1,10 @@
 use std::{collections::HashMap, str::FromStr};
 use chrono::Utc;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
 
-use crate::core::{error::HttpError, expansion::ExpandedHttpContext};
+use crate::core::{error::HttpError, expansion::ExpandedHttpContext, logger::Logger};
 
 /// The JWT JOSE Header represents a JSON object whose members are the header parameters of the JWT.
 #[derive(Default, Clone, Deserialize, Debug)]
@@ -43,27 +43,18 @@ pub struct JWTClaims {
 
 impl JWTClaims {
 
-    /// Returns the value of a claim.
+    /// Returns the value of a `claim` parsed to `T`.
     /// 
     /// # Returns
     /// - `Ok(T)` if the claim is found and could be parsed to `T`.
     /// - `Err(HttpError)` if:
     ///     - The claim is not found.
     ///     - The claim cannot be parsed to `T`.
-    pub fn get<T>(&self, claim: &str) -> Result<T, HttpError> where T: FromStr, {
-        if let Some(value) = self.claims.get(claim) {
-            value.as_str()
-                .ok_or_else(|| HttpError::new(401, format!("Error decoding token, claim '{}' cannot be parsed to string.", claim)))?
-                .parse::<T>()
-                .map_err(|_| HttpError::new(401, format!("Failed to parse claim '{}' as {}", claim, std::any::type_name::<T>())))
-        } else {
-            Err(HttpError::new(401, format!("Error decoding token, claim '{}' not found.", claim)))
+    pub fn get<T>(&self, claim: &str) -> Result<T, HttpError> where T: DeserializeOwned, {
+        match serde_json::from_value::<T>(self.claims[claim].clone()) {
+            Ok(value) => Ok(value),
+            Err(_) => Err(HttpError::new(401, format!("Error decoding token, claim '{}' cannot be parsed to {}.", claim, std::any::type_name::<T>()))),
         }
-    }
-
-    #[doc = "Checks if a claim is present in the claims set."]
-    pub fn has(&self, claim: &str) -> bool {
-        self.claims.contains_key(claim)
     }
 }
 
@@ -283,7 +274,7 @@ impl JWT {
         Ok(())
     }
 
-        /// Validates that a claim is within some <code>expected values</code>.
+    /// Validates that a claim is within some <code>expected values</code>.
     /// 
     /// **Returns Err:** If the claim is not found, or does not match one of the expected values or cannot be parsed, an error is returned."
     /// 
@@ -300,7 +291,7 @@ impl JWT {
     /// 
     /// assert!(jwt.validate_claim_value("exp", expected_exp_values).is_err());
     /// ```
-    pub fn validate_claim_value<T>(&self, claim_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + std::str::FromStr {
+    pub fn validate_claim_value<T>(&self, claim_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + DeserializeOwned {
         let claim : T = match self.claims.get(claim_id) {
             Ok(claim) => claim,
             Err(http_error) => return Err(http_error),
@@ -308,6 +299,25 @@ impl JWT {
 
         if !expected_values.contains(&claim) {
             return Err(HttpError::new(401, format!("Error decoding token, {} claim value does not match expected.", claim_id)));
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_multiple_claim_values<T>(&self, claim : &str, expected_values : &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + DeserializeOwned + std::fmt::Debug { 
+        
+        let claims : Vec<T> = match self.claims.get(claim) {
+            Ok(claims) => claims,
+            Err(http_error) => return Err(http_error),
+        };
+
+        Logger::log_info(format!("Expected : {:?}", expected_values).as_str());
+
+        for expected_claim in expected_values {
+            Logger::log_info(format!("Claim : {:?}", expected_claim).as_str());
+            if !claims.contains(&expected_claim) {
+                return Err(HttpError::new(401, "Error decoding token claim value not expected.".to_string()));
+            }
         }
 
         Ok(())

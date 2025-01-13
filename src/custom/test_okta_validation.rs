@@ -13,6 +13,7 @@ use crate::core::capabilities::cache::Cache;
 use crate::core::capabilities::cache::CacheCapability;
 use crate::core::error::HttpError;
 use crate::core::expansion::ExpandedHttpContext;
+use crate::core::logger::Logger;
 use crate::core::logger::LOG_LEVELS;
 
 /// Context for testing Okta JWT validation functionality.
@@ -29,48 +30,46 @@ pub struct TestOktaContext {
 #[derive(Default, Clone, Deserialize)]
 pub struct TestOktaPolicyConfig {
 
-    #[serde(alias = "do-validate-algorithm")]
-    pub do_validate_algorithm: Option<bool>,
+    #[serde(alias = "do_validate_algorithm")]
+    pub do_validate_algorithm: bool,
 
-    #[serde(alias = "valid-algorithms")]
-    pub valid_algorithms: Option<Vec<String>>,
+    #[serde(alias = "valid_algorithms")]
+    pub valid_algorithms: Vec<String>,
 
-    #[serde(alias = "do-validate-issuer")]
-    pub do_validate_issuer: Option<bool>,
+    #[serde(alias = "do_validate_issuer")]
+    pub do_validate_issuer: bool,
 
-    #[serde(alias = "valid-issuers")]
-    pub valid_issuers: Option<Vec<String>>,
+    #[serde(alias = "valid_issuers")]
+    pub valid_issuers: Vec<String>,
 
-    #[serde(alias = "do-validate-audience")]
-    pub do_validate_audience: Option<bool>,
+    #[serde(alias = "do_validate_audience")]
+    pub do_validate_audience: bool,
 
-    #[serde(alias = "valid-audiences")]
-    pub valid_audiences: Option<Vec<String>>,
+    #[serde(alias = "valid_audiences")]
+    pub valid_audiences: Vec<String>,
 
-    #[serde(alias = "do-validate-scope")]
-    pub do_validate_scope: Option<bool>,
+    #[serde(alias = "do_validate_scope")]
+    pub do_validate_scope: bool,
 
-    #[serde(alias = "valid-scopes")]
-    pub valid_scopes: Option<Vec<String>>,
+    #[serde(alias = "valid_scopes")]
+    pub valid_scopes: Vec<String>,
 
-    #[serde(alias = "do-validate-expiration")]
-    pub do_validate_expiration: Option<bool>,
+    #[serde(alias = "do_validate_expiration")]
+    pub do_validate_expiration: bool,
 
-    #[serde(alias = "log-level")]
-    pub log_level: Option<String>,
+    #[serde(alias = "log_level")]
+    pub log_level: String,
 }
 
 impl TestOktaContext {
     pub fn new(policy_config : TestOktaPolicyConfig) -> Self {
 
         // Set log level from policy config, defaulting to Trace if not specified or invalid
-        proxy_wasm::set_log_level(match &policy_config.log_level {
-            Some(log_level) => match LOG_LEVELS.get(log_level) {
+        proxy_wasm::set_log_level(match LOG_LEVELS.get(&policy_config.log_level) {
                 Some(log_level) => *log_level,
                 None => LogLevel::Trace
             },
-            None => LogLevel::Trace
-        });
+        );
 
         // Create new context with default configuration and predefined Okta endpoints
         let context = TestOktaContext {
@@ -120,12 +119,14 @@ impl HttpContext for TestOktaContext {
         };
 
         // Validate token format matches Bearer token pattern
+        Logger::log_info("Validating Bearer...");
         if let Err(http_error) = JWT::validate_token_format(&r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string(), &token) {
             self.send_http_error(http_error);
             return Action::Pause;
         }
 
         // Parse JWT from token
+        Logger::log_info("Parsing JWT...");
         let token = token.split(" ").collect::<Vec<&str>>()[1].to_string();
         self.jwt = match JWT::from_token(&token) {
             Ok(jwt) => Some(jwt),
@@ -136,39 +137,64 @@ impl HttpContext for TestOktaContext {
         };
 
         let jwt = self.jwt.as_ref().unwrap();
+        Logger::log_debug(format!("JWT {:?}", jwt).as_str());
 
         // Perform all configured validations
-        if let Err(http_error) = {
-            // If the policy requires validation and the policy provides expected valid values, we validate
-            if self.policy_config.do_validate_algorithm.is_some() && self.policy_config.valid_algorithms.is_some() {
-                jwt.validate_header_value("alg", self.policy_config.valid_algorithms.as_ref().unwrap())
-            } else {Ok(())}
-        }.and_then(|_| {
-            if self.policy_config.do_validate_issuer.is_some() && self.policy_config.valid_issuers.is_some() {
-                jwt.expect_header("kid")
-            } else {Ok(())}
-        }).and_then(|_| {
-            if self.policy_config.do_validate_issuer.is_some() && self.policy_config.valid_issuers.is_some() {
-                jwt.validate_claim_value::<String>("iss",self.policy_config.valid_issuers.as_ref().unwrap())
-            } else {Ok(())}
-        }).and_then(|_| {
-            if self.policy_config.do_validate_audience.is_some() && self.policy_config.valid_audiences.is_some() {
-                jwt.validate_claim_value::<String>("aud",self.policy_config.valid_audiences.as_ref().unwrap())
-            } else {Ok(())}
-        }).and_then(|_| {
-            if self.policy_config.do_validate_scope.is_some() && self.policy_config.valid_scopes.is_some() {
-                jwt.validate_claim_value::<String>("scp",self.policy_config.valid_scopes.as_ref().unwrap())
-            } else {Ok(())}
-        }).and_then(|_| {
-            if self.policy_config.do_validate_expiration.is_some() {
-                jwt.validate_expiration()
-            } else {Ok(())}
-        }) {
-            // If any validation fails, send error
+        Logger::log_info("Starting Validations...");
+
+        // Algorithm Validation
+        if self.policy_config.do_validate_algorithm && !self.policy_config.valid_algorithms.is_empty() {
+            Logger::log_info("Validating Algorithm");
+            if let Err(http_error) = jwt.validate_header_value("alg", &self.policy_config.valid_algorithms) {
+                self.send_http_error(http_error);
+                return Action::Pause;
+            }
+        }
+
+        // Issuer Validation
+        if self.policy_config.do_validate_issuer && !self.policy_config.valid_issuers.is_empty() {
+            Logger::log_info("Validating Issuers");
+            if let Err(http_error) = jwt.validate_claim_value::<String>("iss",&self.policy_config.valid_issuers) {
+                self.send_http_error(http_error);
+                return Action::Pause;
+            }
+        }
+
+        // Audience Validation
+        if self.policy_config.do_validate_audience && !self.policy_config.valid_audiences.is_empty() {
+            Logger::log_info("Validating Audiences");
+            if let Err(http_error) = jwt.validate_claim_value::<String>("aud",&self.policy_config.valid_audiences) {
+                self.send_http_error(http_error);
+                return Action::Pause;
+            }
+        }
+
+        // Scope Validation
+        if self.policy_config.do_validate_scope && !self.policy_config.valid_scopes.is_empty() {
+            Logger::log_info("Validating Scopes");
+            if let Err(http_error) = jwt.validate_multiple_claim_values::<String>("scp",&self.policy_config.valid_scopes) {
+                self.send_http_error(http_error);
+                return Action::Pause;
+            }
+        }
+
+        // Expiration Validation
+        if self.policy_config.do_validate_expiration {
+            Logger::log_info("Validating Expiration");
+            if let Err(http_error) = jwt.validate_expiration() {
+                self.send_http_error(http_error);
+                return Action::Pause;
+            }
+        }
+
+        // KID Expected
+        Logger::log_info("Expecting KID...");
+        if let Err(http_error) = jwt.expect_header("kid") {
             self.send_http_error(http_error);
             return Action::Pause;
         }
 
+        Logger::log_info("Validating KID...");
         // Extract key ID from JWT header
         // We can unwrap since we've already expected "kid"
         let kid = jwt.header.get::<String>("kid").unwrap();
@@ -205,6 +231,7 @@ impl HttpContext for TestOktaContext {
         };
 
         if do_call_okta {
+            Logger::log_info("Calling Okta...");
             match self.request_okta_validation() {
                 Ok(()) => {
                     return Action::Pause;

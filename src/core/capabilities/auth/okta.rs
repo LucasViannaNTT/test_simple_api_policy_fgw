@@ -192,8 +192,9 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
         };
 
         let timeout = self.get_okta_validator_config().timeout;
+        let duration = Duration::from_secs(timeout);
 
-        self.dispatch_http_call(
+        if let Err(error) = self.dispatch_http_call(
             upstream, 
             vec![
                 (":method", "GET"),
@@ -202,8 +203,13 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
             ], 
             None, 
             vec![], 
-            Duration::from_secs(timeout),
-        ).map(|_| ()).map_err(|err| HttpError::new(500, format!("Error dispatching Okta endpoint: {:?}", err)))
+            duration,
+        ) {
+            let url = issuer + &"/v1/keys".to_string();
+            return Err(HttpError::new(500, format!("Error dispatching Okta request. URL: {:?}, ERROR:{:?}",  url, error)))
+        };
+
+        Ok(())
     }
 
     /// Processes and handles the response from Okta's validation endpoint.

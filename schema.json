@@ -3,12 +3,12 @@
     "type": "object",
     "description": "Test policy for Flex Gateway",
     "properties": {
-        "do-validate-issuer": {
+        "do_validate_issuer": {
             "title": "Validate Issuer",
             "description": "Whether to validate the issuer of the JWT token",
             "type": "boolean"
         },
-        "valid-issuers": {
+        "valid_issuers": {
             "title": "Valid Issuers",
             "description": "List of valid issuers",
             "type": "array",
@@ -16,12 +16,12 @@
                 "type": "string"
             }
         },
-        "do-validate-audience": {
+        "do_validate_audience": {
             "title": "Validate Audience",
             "description": "Whether to validate the audience of the JWT token",
             "type": "boolean"
         },
-        "valid-audiences": {
+        "valid_audiences": {
             "title": "Valid Audiences",
             "description": "List of valid audiences",
             "type": "array",
@@ -29,12 +29,12 @@
                 "type": "string"
             }
         },
-        "do-validate-algorithm": {
+        "do_validate_algorithm": {
             "title": "Validate Algorithm",
             "description": "Whether to validate the algorithm of the JWT token",
             "type": "boolean"
         },
-        "valid-algorithms": {
+        "valid_algorithms": {
             "title": "Valid Algorithms",
             "description": "List of valid algorithms",
             "type": "array",
@@ -42,25 +42,25 @@
                 "type": "string"
             }
         },
-        "do-validate-scope": {
+        "do_validate_scope": {
             "title": "Validate Scope",
             "description": "Whether to validate the scope of the JWT token",
             "type": "boolean"
         },
-        "valid-scopes": {
-            "title": "Valid Scopes",
-            "description": "List of valid scopes",
+        "valid_scopes": {
+            "title": "Valid Scope Groups",
+            "description": "List of valid scope groups, each scope must be separated by a comma",
             "type": "array",
             "items": {
                 "type": "string"
             }
         },
-        "do-validate-expiration": {
+        "do_validate_expiration": {
             "title": "Validate Expiration",
             "description": "Whether to validate the expiration of the JWT token",
             "type": "boolean"
         },
-        "log-level": {
+        "log_level": {
             "title": "Log Level",
             "description": "Log level for the policy",
             "type": "string",
@@ -74,7 +74,12 @@
         }
     },
     "required": [
-
+        "do_validate_issuer",
+        "do_validate_audience",
+        "do_validate_algorithm",
+        "do_validate_scope",
+        "do_validate_expiration",
+        "log_level"
     ],
     "unevaluatedProperties": false,
     "@context": {
