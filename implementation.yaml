@@ -1,5 +1,5 @@
 #%Policy Implementation 1.0
 minRuntimeVersion: 1.1.0
 technology: flexGateway
-name: test-simple-api-policy-fgw-okta-3.7.0
+name: jwt-validation-flexgateway-testing-poc-impl
 releaseNotes: Modularity

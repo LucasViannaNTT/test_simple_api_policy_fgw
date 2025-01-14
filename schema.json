@@ -1,5 +1,5 @@
 {
-    "title": "test-simple-api-policy-fgw/schema.json",
+    "title": "jwt-validation-flexgateway-testing-poc/schema.json",
     "type": "object",
     "description": "Test policy for Flex Gateway",
     "properties": {
@@ -51,6 +51,7 @@
     },
     "required": [
         "environment",
+        "valid_scopes",
         "log_level"
     ],
     "unevaluatedProperties": false,
