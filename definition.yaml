@@ -1,6 +1,6 @@
 #%Policy Definition 0.1
-name: jwt-validation-flexgateway-testing-poc
-description: jwt-validation-flexgateway-testing-poc's definition
+name: test-simple-api-policy-fgw
+description: test-api-policy-fgw's definition
 category: Custom
 providedCharacteristics: []
 requiredCharacteristics: []

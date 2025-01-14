@@ -105,10 +105,10 @@ pub struct RLUSOktaPolicyConfig {
     pub valid_scopes: String,
 
     #[serde(alias = "okta_data_ttl")]
-    pub okta_data_ttl: i64,
+    pub okta_data_ttl: Option<i64>,
 
     #[serde(alias = "okta_call_timeout")]
-    pub okta_call_timeout: u64,
+    pub okta_call_timeout: Option<u64>,
 
     #[serde(alias = "log_level")]
     pub log_level: String,
@@ -130,8 +130,17 @@ impl RLUSOktaContext {
             },
         );
 
-        let timeout = policy_config.okta_call_timeout;
-        let ttl = policy_config.okta_data_ttl;
+        // Set Okta Call Timeout
+        let timeout = match policy_config.okta_call_timeout {
+            Some(timeout) => timeout,
+            None => 10 // 10 seconds
+        };
+
+        // Set Okta Call TTL
+        let ttl = match policy_config.okta_data_ttl {
+            Some(ttl) => ttl*60*60, // ttl is secconds
+            None => 60*60*24 // 24 hours in seconds
+        };
 
         // Create new context with default configuration and predefined Okta endpoints
         let context = RLUSOktaContext {

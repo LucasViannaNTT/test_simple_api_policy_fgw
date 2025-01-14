@@ -1,5 +1,5 @@
 {
-    "title": "jwt-validation-flexgateway-testing-poc/schema.json",
+    "title": "test-simple-api-policy-fgw/schema.json",
     "type": "object",
     "description": "Test policy for Flex Gateway",
     "properties": {
@@ -23,17 +23,17 @@
         },
         "okta_data_ttl": {
             "title": "Okta Data TTL in hours",
-            "description": "TTL for Okta data in seconds",
+            "description": "TTL for Okta data in hours",
             "type": "integer",
             "minimum": 0,
             "default": 24
         },
         "okta_call_timeout": {
             "title": "Okta Call Timeout in seconds",
-            "description": "Timeout for Okta calls in milisecconds",
+            "description": "Timeout for Okta calls in seconds",
             "type": "integer",
             "minimum": 0,
-            "default": 1000
+            "default": 10
         },
         "log_level": {
             "title": "Log Level",
