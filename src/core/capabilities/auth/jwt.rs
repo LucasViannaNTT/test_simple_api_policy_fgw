@@ -69,23 +69,55 @@ pub struct JWT{
 
 impl JWT {
 
-    /// Validates the JWT against the registered claims and expiration time.
+    /// Validates the JWT token format.
+    /// Expects the token to match the following regex: <code>r"^[0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$"</code>
     /// 
-    /// **Returns Err:** If the token does not follow the expected regular expression.
+    /// **Returns Err:** If the token's format is invalid
+    /// 
+    /// # Examples
+    /// ```
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
+    /// 
+    /// assert_eq!(JWT::validate_token_format(&token), Ok(()));
+    /// 
+    /// let token = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
+    /// 
+    /// assert_ne!(JWT::validate_token_format(&token), Ok(()));
+    /// 
+    /// let token = "eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
+    /// 
+    /// assert_ne!(JWT::validate_token_format(&token), Ok(()));
+    /// ```
+    pub fn validate_token_format(token : &String) -> Result<(), HttpError> {
+        let re = Regex::new(&r"^[0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string()).unwrap();
+        
+        if !re.is_match(token) {
+            return Err(HttpError::new(401, "Error decoding token, signature does not follow expected regular expression.".to_string()));
+        }
+        Ok(())
+    }
+
+    /// Validates the JWT token format, expecting a "Bearer " before the token data.
+    /// Expects the token to match the following regex: <code>r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$"</code>
+    /// 
+    /// **Returns Err:** If the token's format is invalid
     /// 
     /// # Examples
     /// ```
     /// let token = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
-    /// let regex = &r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string();
     /// 
-    /// assert_eq!(JWT::validate_token_format(regex, &token), Ok(()));
+    /// assert_eq!(JWT::validate_token_format_with_bearer(&token), Ok(()));
     /// 
-    /// let regex = &r"^[0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string();
+    /// let token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
     /// 
-    /// assert_ne!(JWT::validate_token_format(regex, &token), Ok(()));
+    /// assert_ne!(JWT::validate_token_format_with_bearer(&token), Ok(()));
+    /// 
+    /// let token = "Bearer eyJzdWIiOiIxMjM0NTY3ODkwIiwiaWF0IjoxNTE2MjM5MDIyfQ.L8i6g3PfcHlioHCCPURC9pmXT7gdJpx3kOoyAfNUwCc".to_string();
+    /// 
+    /// assert_ne!(JWT::validate_token_format_with_bearer(&token), Ok(()));
     /// ```
-    pub fn validate_token_format(regex : &String, token : &String) -> Result<(), HttpError> {
-        let re = Regex::new(regex).unwrap();
+    pub fn validate_token_format_with_bearer(token : &String) -> Result<(), HttpError> {
+        let re = Regex::new(&r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string()).unwrap();
         
         if !re.is_match(token) {
             return Err(HttpError::new(401, "Error decoding token, signature does not follow expected regular expression.".to_string()));

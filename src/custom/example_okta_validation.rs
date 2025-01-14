@@ -120,7 +120,7 @@ impl HttpContext for TestOktaContext {
 
         // Validate token format matches Bearer token pattern
         Logger::log_info("Validating Bearer...");
-        if let Err(http_error) = JWT::validate_token_format(&r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$".to_string(), &token) {
+        if let Err(http_error) = JWT::validate_token_format_with_bearer(&token) {
             self.send_http_error(http_error);
             return Action::Pause;
         }
