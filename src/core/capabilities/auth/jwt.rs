@@ -4,7 +4,7 @@ use regex::Regex;
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
 
-use crate::core::{error::HttpError, expansion::ExpandedHttpContext, logger::Logger};
+use crate::core::{error::HttpError, expansion::ExpandedHttpContext};
 
 /// The JWT JOSE Header represents a JSON object whose members are the header parameters of the JWT.
 #[derive(Default, Clone, Deserialize, Debug)]
@@ -304,17 +304,14 @@ impl JWT {
         Ok(())
     }
 
+    // TODO Document
     pub fn validate_multiple_claim_values<T>(&self, claim : &str, expected_values : &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + DeserializeOwned + std::fmt::Debug { 
-        
         let claims : Vec<T> = match self.claims.get(claim) {
             Ok(claims) => claims,
             Err(http_error) => return Err(http_error),
         };
 
-        Logger::log_info(format!("Expected : {:?}", expected_values).as_str());
-
         for expected_claim in expected_values {
-            Logger::log_info(format!("Claim : {:?}", expected_claim).as_str());
             if !claims.contains(&expected_claim) {
                 return Err(HttpError::new(401, "Error decoding token claim value not expected.".to_string()));
             }

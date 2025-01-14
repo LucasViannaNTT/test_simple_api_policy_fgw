@@ -345,17 +345,15 @@ pub trait OktaValidatorCapability : JWTHttpCapability + CacheCapability<OktaCach
                 None => OktaCacheIssuerData::new(),
             };
 
+            if let Err(http_error) = validate_token(&jwk.e, &jwk.n, &jwt_raw) {
+                return Err(http_error);
+            }
+
             let issuer_key_data = OktaCacheIssuerKeyData::new(jwk.n.clone(), jwk.e.clone(), expiration);
             issuer_data.keys.insert(jwk.kid.clone(), issuer_key_data);
 
             // Overwrite the issuer data in the cache with the updated one
             let _ = self.write_to_cache(jwt_issuer_str, issuer_data);
-
-            // TODO ASK Why the validation occurs after writing to cache?
-            // TODO ASK Does Okta only validates through RS256?
-            if let Err(http_error) = validate_token(&jwk.e, &jwk.n, &jwt_raw) {
-                return Err(http_error);
-            }
         }
         return Ok(())
     }

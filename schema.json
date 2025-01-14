@@ -1,64 +1,39 @@
 {
-    "title": "test-simple-api-policy-fgw/schema.json",
+    "title": "jwt-validation-flexgateway-testing-poc/schema.json",
     "type": "object",
     "description": "Test policy for Flex Gateway",
     "properties": {
-        "do_validate_issuer": {
-            "title": "Validate Issuer",
-            "description": "Whether to validate the issuer of the JWT token",
-            "type": "boolean"
-        },
-        "valid_issuers": {
-            "title": "Valid Issuers",
-            "description": "List of valid issuers",
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        },
-        "do_validate_audience": {
-            "title": "Validate Audience",
-            "description": "Whether to validate the audience of the JWT token",
-            "type": "boolean"
-        },
-        "valid_audiences": {
-            "title": "Valid Audiences",
-            "description": "List of valid audiences",
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        },
-        "do_validate_algorithm": {
-            "title": "Validate Algorithm",
-            "description": "Whether to validate the algorithm of the JWT token",
-            "type": "boolean"
-        },
-        "valid_algorithms": {
-            "title": "Valid Algorithms",
-            "description": "List of valid algorithms",
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
-        },
-        "do_validate_scope": {
-            "title": "Validate Scope",
-            "description": "Whether to validate the scope of the JWT token",
-            "type": "boolean"
+        "environment" : {
+            "title": "Environment",
+            "description": "Environment for the policy",
+            "type": "string",
+            "enum": [
+                "Dev",
+                "Test",
+                "Preprod",
+                "Prod",
+                "Default"
+            ],
+            "default": "Dev"
         },
         "valid_scopes": {
-            "title": "Valid Scope Groups",
-            "description": "List of valid scope groups, each scope must be separated by a comma",
-            "type": "array",
-            "items": {
-                "type": "string"
-            }
+            "title": "Valid Scopes",
+            "description": "List of valid scopes, each scope must be separated by a space.",
+            "type": "string"
         },
-        "do_validate_expiration": {
-            "title": "Validate Expiration",
-            "description": "Whether to validate the expiration of the JWT token",
-            "type": "boolean"
+        "okta_data_ttl": {
+            "title": "Okta Data TTL in hours",
+            "description": "TTL for Okta data in seconds",
+            "type": "integer",
+            "minimum": 0,
+            "default": 24
+        },
+        "okta_call_timeout": {
+            "title": "Okta Call Timeout in seconds",
+            "description": "Timeout for Okta calls in milisecconds",
+            "type": "integer",
+            "minimum": 0,
+            "default": 1000
         },
         "log_level": {
             "title": "Log Level",
@@ -70,15 +45,12 @@
                 "INFO",
                 "WARN",
                 "ERROR"
-            ]
+            ],
+            "default": "INFO"
         }
     },
     "required": [
-        "do_validate_issuer",
-        "do_validate_audience",
-        "do_validate_algorithm",
-        "do_validate_scope",
-        "do_validate_expiration",
+        "environment",
         "log_level"
     ],
     "unevaluatedProperties": false,
