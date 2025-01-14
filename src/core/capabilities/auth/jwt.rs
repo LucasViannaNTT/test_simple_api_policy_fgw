@@ -72,7 +72,7 @@ impl JWT {
     /// Validates the JWT token format.
     /// Expects the token to match the following regex: <code>r"^[0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$"</code>
     /// 
-    /// **Returns Err:** If the token's format is invalid
+    /// **Returns Err:** If the token's format is invalid.
     /// 
     /// # Examples
     /// ```
@@ -100,7 +100,7 @@ impl JWT {
     /// Validates the JWT token format, expecting a "Bearer " before the token data.
     /// Expects the token to match the following regex: <code>r"^Bearer [0-9a-zA-Z]*\.[0-9a-zA-Z]*\.[0-9a-zA-Z-_]*$"</code>
     /// 
-    /// **Returns Err:** If the token's format is invalid
+    /// **Returns Err:** If the token's format is invalid.
     /// 
     /// # Examples
     /// ```
@@ -278,7 +278,7 @@ impl JWT {
 
     /// Validates that a header is within some <code>expected values</code>.
     /// 
-    /// **Returns Err:** If the header is not found, or does not match one of the expected values or cannot be parsed, an error is returned."
+    /// **Returns Err:** If the header is not found, or does not match one of the expected values or cannot be parsed."
     /// 
     /// # Examples
     /// ```
@@ -306,9 +306,9 @@ impl JWT {
         Ok(())
     }
 
-    /// Validates that a claim is within some <code>expected values</code>.
+    /// Checks if a <code>expected value</code> matches the <code>JWT</code>'S <code>claim</code> value.
     /// 
-    /// **Returns Err:** If the claim is not found, or does not match one of the expected values or cannot be parsed, an error is returned."
+    /// **Returns Err:** If the claim is not found, or does not match one of the expected values or cannot be parsed."
     /// 
     /// # Examples
     /// ```
@@ -323,29 +323,36 @@ impl JWT {
     /// 
     /// assert!(jwt.validate_claim_value("exp", expected_exp_values).is_err());
     /// ```
-    pub fn validate_claim_value<T>(&self, claim_id: &str, expected_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + DeserializeOwned {
-        let claim : T = match self.claims.get(claim_id) {
+    pub fn validate_claim_value<T>(&self, claim: &str, expected_claim_values: &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + DeserializeOwned {
+        let claim_value : T = match self.claims.get(claim) {
             Ok(claim) => claim,
             Err(http_error) => return Err(http_error),
         };
 
-        if !expected_values.contains(&claim) {
-            return Err(HttpError::new(401, format!("Error decoding token, {} claim value does not match expected.", claim_id)));
+        if !expected_claim_values.contains(&claim_value) {
+            return Err(HttpError::new(401, format!("Error decoding token, {} claim value does not match expected.", claim)));
         }
 
         Ok(())
     }
 
-    // TODO Document
-    pub fn validate_multiple_claim_values<T>(&self, claim : &str, expected_values : &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + DeserializeOwned + std::fmt::Debug { 
-        let claims : Vec<T> = match self.claims.get(claim) {
+    /// Checks if all <code>expected claim values</code> are within the <code>JWT</code>'s <code>claim</code> values.
+    /// 
+    /// **Returns Err:** If the claim is not found, doesn't contain all expected values, or cannot be parsed."
+    /// 
+    /// # Examples
+    /// ```
+    /// 
+    /// ```
+    pub fn validate_multiple_claim_values<T>(&self, claim : &str, expected_claim_values : &Vec<T>) -> Result<(), HttpError> where T: Eq + std::hash::Hash + DeserializeOwned + std::fmt::Debug { 
+        let claim_values : Vec<T> = match self.claims.get(claim) {
             Ok(claims) => claims,
             Err(http_error) => return Err(http_error),
         };
 
-        for expected_claim in expected_values {
-            if !claims.contains(&expected_claim) {
-                return Err(HttpError::new(401, "Error decoding token claim value not expected.".to_string()));
+        for expected_claim_values in expected_claim_values {
+            if !claim_values.contains(&expected_claim_values) {
+                return Err(HttpError::new(401, format!("Error decoding token, {:?} claim contains a value not expected.", claim)));
             }
         }
 
